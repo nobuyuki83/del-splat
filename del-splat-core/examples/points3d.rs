@@ -34,18 +34,18 @@ fn main() -> anyhow::Result<()> {
     // define 3D points
     let mut points = {
         let mut points: Vec<Point> = vec![];
-        let cumsumarea = del_msh_core::sampling::cumulative_area_sum(&tri2vtx, &vtx2xyz, 3);
+        let cumsumarea = del_msh_core::trimesh::tri2cumsumarea(&tri2vtx, &vtx2xyz, 3);
         // let mut reng = rand::thread_rng();
         use rand::SeedableRng;
         let mut reng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
         for _i in 0..10000 {
-            let val01_a = reng.gen::<f32>();
-            let val01_b = reng.gen::<f32>();
+            let val01_a = reng.random::<f32>();
+            let val01_b = reng.random::<f32>();
             let barycrd =
                 del_msh_core::sampling::sample_uniformly_trimesh(&cumsumarea, val01_a, val01_b);
             let tri = del_msh_core::trimesh3::to_tri3(&tri2vtx, &vtx2xyz, barycrd.0);
             let pos_world = tri.position_from_barycentric_coordinates(barycrd.1, barycrd.2);
-            let normal_world = del_geo_core::vec3::normalized(&tri.normal());
+            let normal_world = del_geo_core::vec3::normalize(&tri.normal());
             let color = [
                 normal_world[0] * 0.5 + 0.5,
                 normal_world[1] * 0.5 + 0.5,
@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
     let cam_modelview =
         del_geo_core::mat4_col_major::camera_external_blender(&[0., 0., 2.], 0., 0., 0.);
     let transform_world2ndc =
-        del_geo_core::mat4_col_major::mult_mat(&cam_projection, &cam_modelview);
+        del_geo_core::mat4_col_major::mult_mat_col_major(&cam_projection, &cam_modelview);
 
     // transform points
     for point in points.iter_mut() {
@@ -152,7 +152,7 @@ fn main() -> anyhow::Result<()> {
         }
          */
         let img_data = del_splat_core::splat_point2::draw(&img_shape, &points);
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/points3d_pix.png",
             &img_shape,
             &img_data,
@@ -232,7 +232,7 @@ fn main() -> anyhow::Result<()> {
                    .flat_map(pix2rgb)
                    .collect();
         */
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/points3d_gaussian_tile.png",
             &img_shape,
             &img_data,
@@ -270,7 +270,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/points3d_gaussian.png",
             &img_shape,
             &img_data,
@@ -302,7 +302,7 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/points3d_ellipse.png",
             &img_shape,
             &img_data,

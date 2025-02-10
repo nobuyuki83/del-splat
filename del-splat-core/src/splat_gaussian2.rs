@@ -471,7 +471,7 @@ where
             let e = del_geo_core::mat2_sym::mult_vec_from_both_sides(sig_inv, &t0, &t0);
             let e = (-0.5 * e).exp() * alpha;
             let e_out = alpha_occu * e;
-            img_data[(ih * img_shape.0 + iw) * 3 + 0] += rgb[0] * e_out;
+            img_data[(ih * img_shape.0 + iw) * 3] += rgb[0] * e_out;
             img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
             img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
             alpha_occu *= 1f32 - e;
@@ -481,6 +481,6 @@ where
             }
         }
     }
-    del_canvas_image::write_png_from_float_image_rgb(path, &img_shape, &img_data)?;
+    del_canvas::write_png_from_float_image_rgb(path, &img_shape, &img_data)?;
     Ok(())
 }

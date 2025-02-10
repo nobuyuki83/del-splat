@@ -46,7 +46,7 @@ fn main() -> anyhow::Result<()> {
         let quat = [img0.qvec[1], img0.qvec[2], img0.qvec[3], img0.qvec[0]];
         let mat_rot = del_geo_core::quaternion::to_mat4_col_major(&quat);
         let mat_transl = mat4_col_major::from_translate(&img0.tvec);
-        let mat0 = mat4_col_major::mult_mat(&mat_transl, &mat_rot);
+        let mat0 = mat4_col_major::mult_mat_col_major(&mat_transl, &mat_rot);
         let img_shape = (camera.width as usize, camera.height as usize);
         let mut pnt2splat2: Vec<Splat2> = vec![];
         for (ivtx, &pntid) in img0.vtx2id.iter().enumerate() {

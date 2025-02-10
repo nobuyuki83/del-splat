@@ -118,7 +118,7 @@ fn main() -> anyhow::Result<()> {
             0f32,
             0f32,
         );
-        del_geo_core::mat4_col_major::mult_mat(&cam_proj, &cam_modelview)
+        del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
     let transform_ndc2pix = del_geo_core::mat2x3_col_major::transform_ndc2pix(img_shape);
     del_splat_core::splat_point3::draw_pix(
