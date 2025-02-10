@@ -13,11 +13,11 @@ where
 {
     let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1]; // black
     let transform_ndc2pix = del_geo_core::mat2x3_col_major::transform_ndc2pix(img_shape);
-    for i_pnt in 0..pnt2splat3.len() {
-        let xyz = pnt2splat3[i_pnt].xyz();
-        let rgb = pnt2splat3[i_pnt].rgb();
-        let q0 = del_geo_core::mat4_col_major::transform_homogeneous(transform_world2ndc, &xyz)
-            .unwrap();
+    for splat3 in pnt2splat3 {
+        let xyz = splat3.xyz();
+        let rgb = splat3.rgb();
+        let q0 =
+            del_geo_core::mat4_col_major::transform_homogeneous(transform_world2ndc, &xyz).unwrap();
         let r0 =
             del_geo_core::mat2x3_col_major::mult_vec3(&transform_ndc2pix, &[q0[0], q0[1], 1f32]);
         if r0[0] < 0f32 || r0[0] >= img_shape.0 as f32 {
@@ -34,6 +34,6 @@ where
         img_data[ipix][2] = rgb[2];
     }
     use ::slice_of_array::SliceFlatExt; // for flat
-    del_canvas::write_png_from_float_image_rgb(path, &img_shape, (&img_data).flat())?;
+    del_canvas::write_png_from_float_image_rgb(path, &img_shape, img_data.flat())?;
     Ok(())
 }

@@ -29,6 +29,7 @@ pub fn read_cameras<PATH: AsRef<std::path::Path>>(path: PATH) -> anyhow::Result<
         let model = match model_id {
             1 => {
                 let mut v = [0f64; 4];
+                #[allow(clippy::needless_range_loop)]
                 for i_param in 0..4 {
                     v[i_param] = reader.read_f64::<LittleEndian>()?;
                 }

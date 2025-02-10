@@ -1,4 +1,6 @@
 #[cfg(feature = "cuda")]
+use del_cudarc::cudarc;
+#[cfg(feature = "cuda")]
 use del_splat_cudarc::splat_gauss::Splat2;
 #[cfg(feature = "cuda")]
 use del_splat_cudarc::splat_gauss::Splat3;
@@ -28,7 +30,7 @@ fn main() -> anyhow::Result<()> {
             0f32,
             0f32,
         );
-        del_geo_core::mat4_col_major::mult_mat(&cam_proj, &cam_modelview)
+        del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
     // --------------------------
     // below: cuda code from here
@@ -71,7 +73,7 @@ fn main() -> anyhow::Result<()> {
             now.elapsed()
         );
         let pix2rgb = dev.dtoh_sync_copy(&pix2rgb_dev)?;
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__03_splat_gauss.png",
             &img_shape,
             &pix2rgb,
@@ -83,7 +85,7 @@ fn main() -> anyhow::Result<()> {
         let now = std::time::Instant::now();
         let pnt2splat2 = dev.dtoh_sync_copy(&pnt2splat2_dev)?;
         let pnt2aabbdepth = |i_pnt: usize| (pnt2splat2[i_pnt].aabb, pnt2splat2[i_pnt].ndc_z);
-        let (tile2idx, idx2pnt) = del_canvas_cpu::tile_acceleration::tile2pnt::<_, u32>(
+        let (tile2idx, idx2pnt) = del_splat_core::tile_acceleration::tile2pnt::<_, u32>(
             pnt2splat2.len(),
             pnt2aabbdepth,
             img_shape,
@@ -111,7 +113,7 @@ fn main() -> anyhow::Result<()> {
             now.elapsed()
         );
         let pix2rgb = dev.dtoh_sync_copy(&pix2rgb_dev)?;
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__03_splat_gauss_test_rasterize.png",
             &img_shape,
             &pix2rgb,
@@ -122,7 +124,7 @@ fn main() -> anyhow::Result<()> {
         // check tile2pnt
         let pnt2splat2 = dev.dtoh_sync_copy(&pnt2splat2_dev)?;
         let pnt2aabbdepth = |i_pnt: usize| (pnt2splat2[i_pnt].aabb, pnt2splat2[i_pnt].ndc_z);
-        let (tile2idx_cpu, idx2pnt_cpu) = del_canvas_cpu::tile_acceleration::tile2pnt::<_, u32>(
+        let (tile2idx_cpu, idx2pnt_cpu) = del_splat_core::tile_acceleration::tile2pnt::<_, u32>(
             pnt2splat2.len(),
             pnt2aabbdepth,
             img_shape,
@@ -157,7 +159,7 @@ fn main() -> anyhow::Result<()> {
         let pnt2splat2 = dev.dtoh_sync_copy(&pnt2splat2_dev)?;
         println!("gaussian_naive without tile acceleration");
         let now = std::time::Instant::now();
-        del_canvas_cpu::splat_gaussian2::rasterize_naive(
+        del_splat_core::splat_gaussian2::rasterize_naive(
             &pnt2splat2,
             img_shape,
             "target/del_canvas_cuda__03_splat_gauss_test_splat3_to_splat2.png",

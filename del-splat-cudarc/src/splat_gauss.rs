@@ -1,4 +1,5 @@
 use cudarc::driver::DeviceSlice;
+use del_cudarc::cudarc;
 
 #[derive(Clone, Debug)]
 #[repr(C)]
@@ -56,7 +57,7 @@ pub struct Splat2 {
 
 unsafe impl cudarc::driver::DeviceRepr for Splat2 {}
 
-impl del_canvas_cpu::splat_gaussian2::Splat2 for Splat2 {
+impl del_splat_core::splat_gaussian2::Splat2 for Splat2 {
     fn ndc_z(&self) -> f32 {
         self.ndc_z
     }

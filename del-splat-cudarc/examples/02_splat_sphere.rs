@@ -1,4 +1,6 @@
 #[cfg(feature = "cuda")]
+use del_cudarc::cudarc;
+#[cfg(feature = "cuda")]
 use del_splat_cudarc::splat_sphere::Splat2;
 #[cfg(feature = "cuda")]
 use del_splat_cudarc::splat_sphere::Splat3;
@@ -104,7 +106,7 @@ fn main() -> anyhow::Result<()> {
             0f32,
             0f32,
         );
-        del_geo_core::mat4_col_major::mult_mat(&cam_proj, &cam_modelview)
+        del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
     let radius = 0.0015f32;
 
@@ -138,7 +140,7 @@ fn main() -> anyhow::Result<()> {
             idx2vtx
         };
         let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
-        del_canvas_cpu::rasterize_aabb3::wireframe_dda(
+        del_canvas::rasterize::aabb3::wireframe_dda(
             &mut img_data,
             img_shape,
             &transform_world2ndc,
@@ -156,7 +158,7 @@ fn main() -> anyhow::Result<()> {
             img_data[ipix][2] = (pnt2splat3[i_vtx].rgb[2] as f32) / 255.0;
         }
         use ::slice_of_array::SliceFlatExt; // for flat
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__02_splat_sphere__pix.png",
             &img_shape,
             (&img_data).flat(),
@@ -198,7 +200,7 @@ fn main() -> anyhow::Result<()> {
         )?;
         println!("splat: {:.2?}", now.elapsed());
         let pix2rgb = dev.dtoh_sync_copy(&pix2rgb_dev)?;
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__02_splat_sphere__all_gpu.png",
             &img_shape,
             &pix2rgb,
@@ -210,7 +212,7 @@ fn main() -> anyhow::Result<()> {
         let pnt2splat = dev.dtoh_sync_copy(&pnt2splat_dev)?;
         let tile2idx = dev.dtoh_sync_copy(&tile2idx_dev)?;
         let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
-        del_canvas_cpu::rasterize_aabb3::wireframe_dda(
+        del_canvas::rasterize::aabb3::wireframe_dda(
             &mut img_data,
             img_shape,
             &transform_world2ndc,
@@ -234,7 +236,7 @@ fn main() -> anyhow::Result<()> {
             }
         }
         use ::slice_of_array::SliceFlatExt; // for flat
-        del_canvas_image::write_png_from_float_image_rgb(
+        del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__02_splat_sphere__tile_cpu.png",
             &img_shape,
             (&img_data).flat(),

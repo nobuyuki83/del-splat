@@ -40,6 +40,7 @@ where
         idx2pnt
     };
     let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
+    #[allow(clippy::needless_range_loop)]
     for i_idx in 0..pnt2splat.len() {
         let i_vtx = idx2pnt[i_idx];
         let ndc_z = pnt2splat[i_vtx].ndc_z();

@@ -54,8 +54,7 @@ where
     let num_tile = tile_shape.0 * tile_shape.1;
     let mut tile2jdx = vec![0usize; num_tile + 1];
     {
-        for jdx in 0..jdx2idx.len() {
-            let idx0 = jdx2idx[jdx];
+        for &idx0 in &jdx2idx {
             let i_tile = idx2tilegauss[idx0].0 as usize;
             tile2jdx[i_tile + 1] += 1;
         }
@@ -213,6 +212,7 @@ impl<'a> Gauss<'a> {
 /// how much the color of `i_splats` is visible
 fn transfer_splats(splats: &[(usize, f32, nalgebra::Vector3<f32>)], i_splat: usize) -> f32 {
     let mut alpha = 1f32;
+    #[allow(clippy::needless_range_loop)]
     for j_splat in 0..i_splat {
         alpha *= 1f32 - splats[j_splat].1;
     }
@@ -226,26 +226,30 @@ fn dw_transfer_splats(
     i_splat: usize,
     j_splat: usize,
 ) -> f32 {
-    if j_splat > i_splat {
-        0f32
-    } else if j_splat == i_splat {
-        let mut didj = 1f32;
-        for k_splat in 0..i_splat {
-            didj *= 1f32 - splats[k_splat].1;
-        }
-        didj
-    } else {
-        let mut didj = 1f32;
-        for k_splat in 0..i_splat + 1 {
-            if k_splat != i_splat && k_splat != j_splat {
-                didj *= 1f32 - splats[k_splat].1;
-            } else if k_splat == j_splat {
-                didj *= -1f32;
-            } else if k_splat == i_splat {
-                didj *= splats[k_splat].1;
+    match j_splat.cmp(&i_splat) {
+        std::cmp::Ordering::Greater => 0f32,
+        std::cmp::Ordering::Less => {
+            let mut didj = 1f32;
+            #[allow(clippy::needless_range_loop)]
+            for k_splat in 0..i_splat + 1 {
+                if k_splat != i_splat && k_splat != j_splat {
+                    didj *= 1f32 - splats[k_splat].1;
+                } else if k_splat == j_splat {
+                    didj *= -1f32;
+                } else if k_splat == i_splat {
+                    didj *= splats[k_splat].1;
+                }
             }
+            didj
         }
-        didj
+        std::cmp::Ordering::Equal => {
+            let mut didj = 1f32;
+            #[allow(clippy::needless_range_loop)]
+            for k_splat in 0..i_splat {
+                didj *= 1f32 - splats[k_splat].1;
+            }
+            didj
+        }
     }
 }
 
@@ -326,6 +330,7 @@ pub fn rasterize(
     img_data
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn diff_point2gauss(
     point2gauss: &[f32],
     point2splat: &[f32],

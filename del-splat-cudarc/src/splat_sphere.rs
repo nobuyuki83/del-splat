@@ -1,4 +1,5 @@
 use cudarc::driver::DeviceSlice;
+use del_cudarc::cudarc;
 
 #[derive(Clone, Default)]
 #[repr(C)]
