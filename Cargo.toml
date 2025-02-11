@@ -1,5 +1,11 @@
 [workspace]
-members = ["del-splat-core", "del-splat-cudarc"]
+members = [
+    "del-splat-core",
+    "del-splat-cudarc"
+]
+exclude = [
+    "del-splat-cudarc-kernel"
+]
 resolver = "2"
 
 [workspace.package]
