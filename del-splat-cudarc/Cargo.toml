@@ -19,7 +19,11 @@ del-splat-core.workspace = true
 del-canvas.workspace = true
 
 # for develop
-del-cudarc = {path="../../del-cudarc", optional = true}
+#del-cudarc = {path="../../del-cudarc", optional = true}
+# del-splat-cudarc-kernel = {workspace = true, optional = true }
+
+# for GitHub push
+del-cudarc = {git="https://github.com/nobuyuki83/del-cudarc.git", optional = true}
 del-splat-cudarc-kernel = {workspace = true, optional = true }
 
 
