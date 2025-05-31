@@ -30,7 +30,7 @@ where
             continue;
         }
         let (r0, rad_pix, rgb) = pnt2splat[i_vtx].property();
-        let pixs = del_canvas::rasterize::circle::pixels_in_point(
+        let pixs = del_canvas::rasterize::circle2::pixels_in_point(
             r0[0],
             r0[1],
             rad_pix,

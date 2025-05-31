@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "del-splat-core",
+    "del-splat-cpu",
     "del-splat-cudarc"
 ]
 exclude = [
-    "del-splat-cudarc-kernel"
+    "del-splat-cuda-kernel"
 ]
 resolver = "2"
 
@@ -28,8 +28,8 @@ itertools = "0.14.0"
 byteorder = "1.5.0"
 
 # internal
-del-splat-cudarc-kernel = {path="del-splat-cudarc-kernel"}
-del-splat-core = {path="del-splat-core"}
+del-splat-cudarc-kernel = {path= "del-splat-cuda-kernel" }
+del-splat-core = {path= "del-splat-cpu" }
 
 # for develop
 # del-geo-core = {path = "../del-geo/del-geo-core" }
