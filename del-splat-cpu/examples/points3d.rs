@@ -26,7 +26,7 @@ impl del_splat_core::splat_point2::Splat2 for Point {
 
 fn main() -> anyhow::Result<()> {
     let (tri2vtx, vtx2xyz, _vtx2uv) = {
-        let mut obj = del_msh_core::io_obj::WavefrontObj::<usize, f32>::new();
+        let mut obj = del_msh_cpu::io_obj::WavefrontObj::<usize, f32>::new();
         obj.load("asset/spot/spot_triangulated.obj")?;
         obj.unified_xyz_uv_as_trimesh()
     };
@@ -34,15 +34,15 @@ fn main() -> anyhow::Result<()> {
     // define 3D points
     let mut points = {
         let mut points: Vec<Point> = vec![];
-        let cumsumarea = del_msh_core::trimesh::tri2cumsumarea(&tri2vtx, &vtx2xyz, 3);
+        let cumsumarea = del_msh_cpu::trimesh::tri2cumsumarea(&tri2vtx, &vtx2xyz, 3);
         // let mut reng = rand::thread_rng();
         use rand::SeedableRng;
         let mut reng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
         for _i in 0..10000 {
             let val01_a = reng.random::<f32>();
             let val01_b = reng.random::<f32>();
-            let barycrd = del_msh_core::trimesh::sample_uniformly(&cumsumarea, val01_a, val01_b);
-            let tri = del_msh_core::trimesh3::to_tri3(&tri2vtx, &vtx2xyz, barycrd.0);
+            let barycrd = del_msh_cpu::trimesh::sample_uniformly(&cumsumarea, val01_a, val01_b);
+            let tri = del_msh_cpu::trimesh3::to_tri3(&tri2vtx, &vtx2xyz, barycrd.0);
             let pos_world = tri.position_from_barycentric_coordinates(barycrd.1, barycrd.2);
             let normal_world = del_geo_core::vec3::normalize(&tri.normal());
             let color = [

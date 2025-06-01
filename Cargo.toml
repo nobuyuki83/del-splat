@@ -40,7 +40,7 @@ del-splat-core = {path= "del-splat-cpu" }
 # for push
 del-geo-core = { git = "https://github.com/nobuyuki83/del-geo.git"}
 del-geo-nalgebra = { git = "https://github.com/nobuyuki83/del-geo.git"}
-del-msh-core = { git = "https://github.com/nobuyuki83/del-msh.git" }
+del-msh-cpu = { git = "https://github.com/nobuyuki83/del-msh.git" }
 del-canvas = {git="https://github.com/nobuyuki83/del-canvas.git"}
 
 # for deploy

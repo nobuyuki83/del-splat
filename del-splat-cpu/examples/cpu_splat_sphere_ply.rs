@@ -6,7 +6,7 @@ pub struct Splat3 {
     rgb: [u8; 3],
 }
 
-impl del_msh_core::io_ply::XyzRgb for Splat3 {
+impl del_msh_cpu::io_ply::XyzRgb for Splat3 {
     fn new(xyz: [f64; 3], rgb: [u8; 3]) -> Self {
         Splat3 {
             xyz: xyz.map(|v| v as f32),
@@ -15,7 +15,7 @@ impl del_msh_core::io_ply::XyzRgb for Splat3 {
     }
 }
 
-impl del_msh_core::vtx2point::HasXyz<f32> for Splat3 {
+impl del_msh_cpu::vtx2point::HasXyz<f32> for Splat3 {
     fn xyz(&self) -> &[f32; 3] {
         &self.xyz
     }
@@ -53,8 +53,8 @@ impl del_splat_core::splat_point2::NdcZ for Splat2 {
 fn main() -> anyhow::Result<()> {
     // let path = "/Users/nobuyuki/project/juice_box1.ply";
     let file_path = "asset/juice_box.ply";
-    let pnt2splat3 = del_msh_core::io_ply::read_xyzrgb::<_, Splat3>(file_path)?;
-    let aabb3 = del_msh_core::vtx2point::aabb3_from_points(&pnt2splat3);
+    let pnt2splat3 = del_msh_cpu::io_ply::read_xyzrgb::<_, Splat3>(file_path)?;
+    let aabb3 = del_msh_cpu::vtx2point::aabb3_from_points(&pnt2splat3);
     let aabb3: [f32; 6] = aabb3.map(|v| v.as_());
     let img_shape = (1600usize + 1, 960usize + 1);
     let transform_world2ndc = {
@@ -81,7 +81,7 @@ fn main() -> anyhow::Result<()> {
     let radius = 0.0015;
     let pnt2splat2 = {
         // pnt2splat2 from pnt2splat3
-        use del_msh_core::vtx2point::HasXyz;
+        use del_msh_cpu::vtx2point::HasXyz;
         let mut vtx2splat = vec![
             Splat2 {
                 ndc_z: 0f32,

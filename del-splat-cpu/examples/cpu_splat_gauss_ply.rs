@@ -9,7 +9,7 @@ pub struct Splat3 {
     quaternion: [f32; 4],
 }
 
-impl del_msh_core::io_ply::GaussSplat3D for Splat3 {
+impl del_msh_cpu::io_ply::GaussSplat3D for Splat3 {
     fn new(
         xyz: [f32; 3],
         rgb_dc: [f32; 3],
@@ -29,7 +29,7 @@ impl del_msh_core::io_ply::GaussSplat3D for Splat3 {
     }
 }
 
-impl del_msh_core::vtx2point::HasXyz<f32> for Splat3 {
+impl del_msh_cpu::vtx2point::HasXyz<f32> for Splat3 {
     fn xyz(&self) -> &[f32; 3] {
         &self.xyz
     }
@@ -84,8 +84,8 @@ fn main() -> anyhow::Result<()> {
     // let file_path = "C:/Users/nobuy/Downloads/ChilliPepperPlant.ply"; //"asset/dog.ply";
     let file_path = "asset/dog.ply";
     let pnt2splat3 = {
-        let mut pnt2splat3 = del_msh_core::io_ply::read_3d_gauss_splat::<_, Splat3>(file_path)?;
-        let aabb3 = del_msh_core::vtx2point::aabb3_from_points(&pnt2splat3);
+        let mut pnt2splat3 = del_msh_cpu::io_ply::read_3d_gauss_splat::<_, Splat3>(file_path)?;
+        let aabb3 = del_msh_cpu::vtx2point::aabb3_from_points(&pnt2splat3);
         let longest_edge = del_geo_core::aabb3::max_edge_size(&aabb3);
         let scale = 1.0 / longest_edge;
         let scale_sqrt = scale * scale;
