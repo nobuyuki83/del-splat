@@ -1,5 +1,5 @@
 #[cfg(feature = "cuda")]
-use del_cudarc::cudarc;
+use del_cudarc_safe::cudarc;
 #[cfg(feature = "cuda")]
 use del_splat_cudarc::splat_gauss::Splat2;
 #[cfg(feature = "cuda")]
@@ -8,9 +8,9 @@ use del_splat_cudarc::splat_gauss::Splat3;
 #[cfg(feature = "cuda")]
 fn main() -> anyhow::Result<()> {
     let file_path = "asset/dog.ply";
-    let pnt2splat3 = del_msh_core::io_ply::read_3d_gauss_splat::<_, Splat3>(file_path)?;
+    let pnt2splat3 = del_msh_cpu::io_ply::read_3d_gauss_splat::<_, Splat3>(file_path)?;
     // pnt2gs3.iter().enumerate().for_each(|(i_pnt, a)| { dbg!(i_pnt, a.xyz); } );
-    let aabb3 = del_msh_core::vtx2point::aabb3_from_points(&pnt2splat3);
+    let aabb3 = del_msh_cpu::vtx2point::aabb3_from_points(&pnt2splat3);
     let img_shape = (800usize + 1, 1200usize + 1);
     let transform_world2ndc = {
         let cam_proj = del_geo_core::mat4_col_major::camera_perspective_blender(
@@ -34,14 +34,15 @@ fn main() -> anyhow::Result<()> {
     };
     // --------------------------
     // below: cuda code from here
-    let dev = cudarc::driver::CudaDevice::new(0)?;
+    let ctx = cudarc::driver::CudaContext::new(0)?;
+    let dev = ctx.default_stream();
     //
-    let pnt2splat3_dev = dev.htod_copy(pnt2splat3.clone())?;
+    let pnt2splat3_dev = dev.memcpy_stod(&pnt2splat3)?;
     let mut pnt2splat2_dev = {
         let pnt2splat2 = vec![Splat2::default(); pnt2splat3.len()];
-        dev.htod_copy(pnt2splat2.clone())?
+        dev.memcpy_stod(&pnt2splat2)?
     };
-    let transform_world2ndc_dev = dev.htod_copy(transform_world2ndc.to_vec())?;
+    let transform_world2ndc_dev = dev.memcpy_stod(&transform_world2ndc)?;
     del_splat_cudarc::splat_gauss::pnt2splat3_to_pnt2splat2(
         &dev,
         &pnt2splat3_dev,
@@ -72,7 +73,7 @@ fn main() -> anyhow::Result<()> {
             "   Elapsed rasterize on GPU with tile: {:.2?}",
             now.elapsed()
         );
-        let pix2rgb = dev.dtoh_sync_copy(&pix2rgb_dev)?;
+        let pix2rgb = dev.memcpy_dtov(&pix2rgb_dev)?;
         del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__03_splat_gauss.png",
             &img_shape,
@@ -83,7 +84,7 @@ fn main() -> anyhow::Result<()> {
     {
         // draw image on GPu with tile2pnt computed on cpu
         let now = std::time::Instant::now();
-        let pnt2splat2 = dev.dtoh_sync_copy(&pnt2splat2_dev)?;
+        let pnt2splat2 = dev.memcpy_dtov(&pnt2splat2_dev)?;
         let pnt2aabbdepth = |i_pnt: usize| (pnt2splat2[i_pnt].aabb, pnt2splat2[i_pnt].ndc_z);
         let (tile2idx, idx2pnt) = del_splat_core::tile_acceleration::tile2pnt::<_, u32>(
             pnt2splat2.len(),
@@ -94,8 +95,8 @@ fn main() -> anyhow::Result<()> {
         println!("num_idx: {}", idx2pnt.len());
         println!("   Elapsed tile2pnt on CPU: {:.2?}", now.elapsed());
         //
-        let tile2idx_dev = dev.htod_copy(tile2idx)?;
-        let idx2pnt_dev = dev.htod_copy(idx2pnt)?;
+        let tile2idx_dev = dev.memcpy_stod(&tile2idx)?;
+        let idx2pnt_dev = dev.memcpy_stod(&idx2pnt)?;
         //
         let now = std::time::Instant::now();
         let mut pix2rgb_dev = dev.alloc_zeros::<f32>(img_shape.0 * img_shape.1 * 3)?;
@@ -112,7 +113,7 @@ fn main() -> anyhow::Result<()> {
             "   Elapsed rasterize on GPU with tile: {:.2?}",
             now.elapsed()
         );
-        let pix2rgb = dev.dtoh_sync_copy(&pix2rgb_dev)?;
+        let pix2rgb = dev.memcpy_dtov(&pix2rgb_dev)?;
         del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__03_splat_gauss_test_rasterize.png",
             &img_shape,
@@ -122,7 +123,7 @@ fn main() -> anyhow::Result<()> {
 
     {
         // check tile2pnt
-        let pnt2splat2 = dev.dtoh_sync_copy(&pnt2splat2_dev)?;
+        let pnt2splat2 = dev.memcpy_dtov(&pnt2splat2_dev)?;
         let pnt2aabbdepth = |i_pnt: usize| (pnt2splat2[i_pnt].aabb, pnt2splat2[i_pnt].ndc_z);
         let (tile2idx_cpu, idx2pnt_cpu) = del_splat_core::tile_acceleration::tile2pnt::<_, u32>(
             pnt2splat2.len(),
@@ -132,7 +133,7 @@ fn main() -> anyhow::Result<()> {
         );
         {
             // assert tile2idx
-            let tile2idx_gpu = dev.dtoh_sync_copy(&tile2idx_dev)?;
+            let tile2idx_gpu = dev.memcpy_dtov(&tile2idx_dev)?;
             tile2idx_gpu
                 .iter()
                 .zip(tile2idx_cpu.iter())
@@ -143,7 +144,7 @@ fn main() -> anyhow::Result<()> {
         }
         {
             // assert idx2pnt
-            let idx2pnt_gpu = dev.dtoh_sync_copy(&idx2pnt_dev)?;
+            let idx2pnt_gpu = dev.memcpy_dtov(&idx2pnt_dev)?;
             idx2pnt_gpu
                 .iter()
                 .zip(idx2pnt_cpu.iter())
@@ -156,7 +157,7 @@ fn main() -> anyhow::Result<()> {
 
     {
         // cpu rendering from Vec<Splat2>
-        let pnt2splat2 = dev.dtoh_sync_copy(&pnt2splat2_dev)?;
+        let pnt2splat2 = dev.memcpy_dtov(&pnt2splat2_dev)?;
         println!("gaussian_naive without tile acceleration");
         let now = std::time::Instant::now();
         del_splat_core::splat_gaussian2::rasterize_naive(

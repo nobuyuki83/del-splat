@@ -1,5 +1,5 @@
 #[cfg(feature = "cuda")]
-use del_cudarc::cudarc;
+use del_cudarc_safe::cudarc;
 #[cfg(feature = "cuda")]
 use del_splat_cudarc::splat_sphere::Splat2;
 #[cfg(feature = "cuda")]
@@ -84,8 +84,8 @@ fn assert_tile2pnt(
 fn main() -> anyhow::Result<()> {
     // let path = "/Users/nobuyuki/project/juice_box1.ply";
     let file_path = "asset/juice_box.ply";
-    let pnt2splat3 = del_msh_core::io_ply::read_xyzrgb::<_, Splat3>(file_path)?;
-    let aabb3 = del_msh_core::vtx2point::aabb3_from_points(&pnt2splat3);
+    let pnt2splat3 = del_msh_cpu::io_ply::read_xyzrgb::<_, Splat3>(file_path)?;
+    let aabb3 = del_msh_cpu::vtx2point::aabb3_from_points(&pnt2splat3);
     let aabb3: [f32; 6] = aabb3.map(|v| v.as_());
     let img_shape = (2000usize + 1, 1200usize + 1);
     let transform_world2ndc = {
@@ -110,14 +110,15 @@ fn main() -> anyhow::Result<()> {
     };
     let radius = 0.0015f32;
 
-    let dev = cudarc::driver::CudaDevice::new(0)?;
+    let ctx = cudarc::driver::CudaContext::new(0)?;
+    let dev = ctx.default_stream();
     //
-    let pnt2xyzrgb_dev = dev.htod_copy(pnt2splat3.clone())?;
+    let pnt2xyzrgb_dev = dev.memcpy_stod(&pnt2splat3)?;
     let mut pnt2splat_dev = {
         let pnt2splat = vec![Splat2::default(); pnt2splat3.len()];
-        dev.htod_copy(pnt2splat.clone())?
+        dev.memcpy_stod(&pnt2splat)?
     };
-    let transform_world2ndc_dev = dev.htod_copy(transform_world2ndc.to_vec())?;
+    let transform_world2ndc_dev = dev.memcpy_stod(&transform_world2ndc)?;
     del_splat_cudarc::splat_sphere::pnt2splat3_to_pnt2splat2(
         &dev,
         &pnt2xyzrgb_dev,
@@ -128,7 +129,7 @@ fn main() -> anyhow::Result<()> {
     )?;
     {
         // draw pixels in cpu using the order computed in cpu
-        let pnt2splat = dev.dtoh_sync_copy(&pnt2splat_dev)?;
+        let pnt2splat = dev.memcpy_dtov(&pnt2splat_dev)?;
         let idx2vtx = {
             let mut idx2vtx: Vec<usize> = (0..pnt2splat.len()).collect();
             idx2vtx.sort_by(|&idx0, &idx1| {
@@ -179,11 +180,11 @@ fn main() -> anyhow::Result<()> {
     )?;
     println!("tile2idx_idx2pnt: {:.2?}", now.elapsed());
     assert_tile2pnt(
-        &(dev.dtoh_sync_copy(&pnt2splat_dev)?),
+        &(dev.memcpy_dtov(&pnt2splat_dev)?),
         tile_shape,
         TILE_SIZE,
-        &dev.dtoh_sync_copy(&tile2idx_dev)?,
-        &dev.dtoh_sync_copy(&idx2pnt_dev)?,
+        &dev.memcpy_dtov(&tile2idx_dev)?,
+        &dev.memcpy_dtov(&idx2pnt_dev)?,
     );
     // --------------------------------------------------------
     {
@@ -199,7 +200,7 @@ fn main() -> anyhow::Result<()> {
             &idx2pnt_dev,
         )?;
         println!("splat: {:.2?}", now.elapsed());
-        let pix2rgb = dev.dtoh_sync_copy(&pix2rgb_dev)?;
+        let pix2rgb = dev.memcpy_dtov(&pix2rgb_dev)?;
         del_canvas::write_png_from_float_image_rgb(
             "target/del_canvas_cuda__02_splat_sphere__all_gpu.png",
             &img_shape,
@@ -208,9 +209,9 @@ fn main() -> anyhow::Result<()> {
     }
     {
         // assert using cpu
-        let idx2pnt = dev.dtoh_sync_copy(&idx2pnt_dev)?;
-        let pnt2splat = dev.dtoh_sync_copy(&pnt2splat_dev)?;
-        let tile2idx = dev.dtoh_sync_copy(&tile2idx_dev)?;
+        let idx2pnt = dev.memcpy_dtov(&idx2pnt_dev)?;
+        let pnt2splat = dev.memcpy_dtov(&pnt2splat_dev)?;
+        let tile2idx = dev.memcpy_dtov(&tile2idx_dev)?;
         let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
         del_canvas::rasterize::aabb3::wireframe_dda(
             &mut img_data,
