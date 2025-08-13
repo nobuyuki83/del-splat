@@ -252,7 +252,8 @@ pub fn tile2idx_idx2pnt(
     let num_ind = stream.memcpy_dtov(&pnt2idx_dev)?.last().unwrap().to_owned(); // todo: send only last element to cpu
     debug_assert_eq!(
         num_ind,
-        stream.memcpy_dtov(&tile2idx_dev)?
+        stream
+            .memcpy_dtov(&tile2idx_dev)?
             .last()
             .unwrap()
             .to_owned()

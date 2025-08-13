@@ -97,10 +97,7 @@ pub fn tile2idx_idx2pnt(
     let num_ind = dev.memcpy_dtov(&pnt2idx_dev)?.last().unwrap().to_owned(); // todo: send only last element to cpu
     debug_assert_eq!(
         num_ind,
-        dev.memcpy_dtov(&tile2idx_dev)?
-            .last()
-            .unwrap()
-            .to_owned()
+        dev.memcpy_dtov(&tile2idx_dev)?.last().unwrap().to_owned()
     );
     let idx2pnt_dev = {
         let mut idx2tiledepth_dev = dev.alloc_zeros::<u64>(num_ind as usize)?;
@@ -169,8 +166,8 @@ pub fn pnt2splat3_to_pnt2splat2(
     {
         use cudarc::driver::PushKernelArg;
         let mut builder = dev.launch_builder(&xyzrgb_to_splat);
-        let img_shape_0 = img_shape.0  as u32;
-        let img_shape_1 = img_shape.1  as u32;
+        let img_shape_0 = img_shape.0 as u32;
+        let img_shape_1 = img_shape.1 as u32;
         let pnt2splat3_dev_len = pnt2splat3_dev.len() as u32;
         builder.arg(&pnt2splat3_dev_len);
         builder.arg(pnt2splat2_dev);
@@ -226,15 +223,15 @@ pub fn splat(
     {
         use cudarc::driver::PushKernelArg;
         let mut builder = dev.launch_builder(&count_splat_in_tile);
-            let img_shape_0 = img_shape.0 as u32;
-            let img_shape_1 = img_shape.1 as u32;
-            builder.arg(&img_shape_0);
-            builder.arg(&img_shape_1);
+        let img_shape_0 = img_shape.0 as u32;
+        let img_shape_1 = img_shape.1 as u32;
+        builder.arg(&img_shape_0);
+        builder.arg(&img_shape_1);
         builder.arg(pix2rgb_dev);
-            let tile_shape_0 = tile_shape.0 as u32;
-            let tile_shape_1 = tile_shape.1 as u32;
-            builder.arg(&tile_shape_0);
-            builder.arg(&tile_shape_1);
+        let tile_shape_0 = tile_shape.0 as u32;
+        let tile_shape_1 = tile_shape.1 as u32;
+        builder.arg(&tile_shape_0);
+        builder.arg(&tile_shape_1);
         let tile_size = tile_size as u32;
         builder.arg(&tile_size);
         builder.arg(tile2idx_dev);
