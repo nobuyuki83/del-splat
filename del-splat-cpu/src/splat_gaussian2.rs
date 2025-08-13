@@ -85,7 +85,7 @@ struct Splat<'a> {
 }
 
 impl<'a> Splat<'a> {
-    fn new(data: &[f32; 10]) -> Splat {
+    fn new(data: &[f32; 10]) -> Splat<'_> {
         Splat { data }
     }
 
@@ -119,7 +119,7 @@ pub struct Gauss<'a> {
 }
 
 impl<'a> Gauss<'a> {
-    pub fn new(data: &[f32; 14]) -> Gauss {
+    pub fn new(data: &[f32; 14]) -> Gauss<'_> {
         Gauss { data }
     }
 
