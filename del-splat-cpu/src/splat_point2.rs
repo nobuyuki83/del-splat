@@ -78,8 +78,7 @@ pub fn draw_pix_sort_z_(
         });
         idx2pnt
     };
-    for i_idx in 0..num_pnt {
-        let i_point = idx2pnt[i_idx];
+    for &i_point in idx2pnt.iter() {
         let ndc_z = pnt2pixcodepth[i_point * 3 + 2];
         if ndc_z <= -1f32 || ndc_z >= 1f32 {
             continue;

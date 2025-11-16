@@ -124,6 +124,7 @@ pub trait GaussSplat3D {
     ) -> Self;
 }
 
+#[allow(clippy::type_complexity)]
 pub fn read_3d_gauss_splat<Path: AsRef<std::path::Path>>(
     path: Path,
 ) -> anyhow::Result<(Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>)> {

@@ -15,7 +15,7 @@ where
         let xyz = arrayref::array_ref![pnt2xyz, i_pnt * 3, 3];
         let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
         let q0 =
-            del_geo_core::mat4_col_major::transform_homogeneous(transform_world2ndc, &xyz).unwrap();
+            del_geo_core::mat4_col_major::transform_homogeneous(transform_world2ndc, xyz).unwrap();
         let r0 =
             del_geo_core::mat2x3_col_major::mult_vec3(&transform_ndc2pix, &[q0[0], q0[1], 1f32]);
         if r0[0] < 0f32 || r0[0] >= img_shape.0 as f32 {
