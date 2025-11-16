@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "del-splat-cpu",
-    "del-splat-cudarc"
+    "del-splat-cudarc",
+    "del-splat-examples"
 ]
 exclude = [
     "del-splat-cuda-kernel"
@@ -19,7 +20,6 @@ license = "MIT"
 [workspace.dependencies]
 num-traits = "0.2.19"
 rand = "0.9.0"
-nalgebra = "0.33.2"
 anyhow = "1.0.94"
 rand_chacha = "0.9.0"
 slice-of-array = "0.3.2"
@@ -29,17 +29,16 @@ byteorder = "1.5.0"
 
 # internal
 del-splat-cudarc-kernel = {path= "del-splat-cuda-kernel" }
+del-splat-cudarc = {path= "del-splat-cudarc" }
 del-splat-core = {path= "del-splat-cpu" }
 
 # for develop
 # del-geo-core = {path = "../del-geo/del-geo-core" }
-# del-geo-nalgebra = {path = "../del-geo/del-geo-nalgebra"}
-# del-msh-core = { path="../del-msh/del-msh-core" }
+# del-msh-cpu = { path="../del-msh/del-msh-cpu" }
 # del-canvas = { path = "../del-canvas"}
 
 # for push
 del-geo-core = { git = "https://github.com/nobuyuki83/del-geo.git"}
-del-geo-nalgebra = { git = "https://github.com/nobuyuki83/del-geo.git"}
 del-msh-cpu = { git = "https://github.com/nobuyuki83/del-msh.git" }
 del-canvas = {git="https://github.com/nobuyuki83/del-canvas.git"}
 

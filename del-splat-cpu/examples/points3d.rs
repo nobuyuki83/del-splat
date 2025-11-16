@@ -1,5 +1,8 @@
+use del_geo_core::mat2_col_major::Mat2ColMajor;
+use del_geo_core::vec2::Vec2;
 use rand::Rng;
 
+/*
 #[derive(Default, Debug)]
 struct Point {
     // 3d information
@@ -17,12 +20,15 @@ struct Point {
     // aabb
     pub aabb: [f32; 4],
 }
+ */
 
-impl del_splat_core::splat_point2::Splat2 for Point {
+/*
+impl del_splat_core::splat_point2::XyRgb for Point {
     fn pos2_rgb(&self) -> ([f32; 2], [f32; 3]) {
         ([self.s[0], self.s[1]], self.color)
     }
 }
+ */
 
 fn main() -> anyhow::Result<()> {
     let (tri2vtx, vtx2xyz, _vtx2uv) = {
@@ -32,13 +38,18 @@ fn main() -> anyhow::Result<()> {
     };
 
     // define 3D points
-    let mut points = {
-        let mut points: Vec<Point> = vec![];
+    let (pnt2xyz, pnt2rgb, pnt2sigma) = {
+        let num_pnt = 10000;
+        // let mut points: Vec<Point> = vec![];
+        let mut pnt2xyz = vec!();
+        let mut pnt2nrm = vec!();
+        let mut pnt2rgb = vec!();
+        let mut pnt2conv = vec!();
         let cumsumarea = del_msh_cpu::trimesh::tri2cumsumarea(&tri2vtx, &vtx2xyz, 3);
         // let mut reng = rand::thread_rng();
         use rand::SeedableRng;
         let mut reng = rand_chacha::ChaCha8Rng::seed_from_u64(0);
-        for _i in 0..10000 {
+        for _i in 0..num_pnt {
             let val01_a = reng.random::<f32>();
             let val01_b = reng.random::<f32>();
             let barycrd = del_msh_cpu::trimesh::sample_uniformly(&cumsumarea, val01_a, val01_b);
@@ -51,20 +62,18 @@ fn main() -> anyhow::Result<()> {
                 normal_world[2] * 0.5 + 0.5,
             ];
             let rad = 0.03;
-            let mut sigma = nalgebra::Matrix3::<f32>::from_diagonal_element(rad * rad);
-            let n = nalgebra::Vector3::<f32>::from_column_slice(&normal_world);
-            let n = n.normalize();
-            sigma -= n * n.transpose() * rad * rad * 0.99;
-            let pnt = Point {
-                pos_world,
-                normal_world,
-                color,
-                sigma,
-                ..Default::default()
-            };
-            points.push(pnt);
+            use del_geo_core::mat3_col_major::Mat3ColMajor;
+            let conv = del_geo_core::mat3_col_major::from_diagonal(&[rad * rad, rad*rad, rad*rad]);
+            let un = del_geo_core::vec3::normalize(&normal_world);
+            let tmp0 = del_geo_core::mat3_col_major::from_scaled_outer_product(rad * rad * 0.99, &un, &un);
+            let conv = conv.sub(&tmp0);
+            //
+            pnt2xyz.extend_from_slice(&pos_world);
+            pnt2nrm.extend_from_slice(&normal_world);
+            pnt2rgb.extend_from_slice(&color);
+            pnt2conv.extend_from_slice(&conv);
         }
-        points
+        (pnt2xyz, pnt2rgb, pnt2conv)
     };
 
     const TILE_SIZE: usize = 16;
@@ -82,57 +91,62 @@ fn main() -> anyhow::Result<()> {
         del_geo_core::mat4_col_major::mult_mat_col_major(&cam_projection, &cam_modelview);
 
     // transform points
-    for point in points.iter_mut() {
-        point.pos_ndc = del_geo_core::mat4_col_major::transform_homogeneous(
+    let pnt2ndc: Vec<f32> = pnt2xyz.chunks(3).flat_map(|xyz|
+        del_geo_core::mat4_col_major::transform_homogeneous(
             &transform_world2ndc,
-            &point.pos_world,
-        )
-        .unwrap();
-    }
-    // sort points depth
-    points.sort_by(|a, b| a.pos_ndc[2].partial_cmp(&b.pos_ndc[2]).unwrap());
+            arrayref::array_ref![xyz, 0, 3]
+        ).unwrap()
+    ).collect();
+    let idx2pnt = {
+        let num_pnt= pnt2ndc.len() / 3;
+        let mut idx2pnt: Vec<usize> = (0..num_pnt).collect();
+        idx2pnt.sort_by(|&i, &j| {
+            let zi = pnt2ndc[i * 3 + 2] + 1f32;
+            let zj = pnt2ndc[j * 3 + 2] + 1f32;
+            zi.partial_cmp(&zj).unwrap()
+        });
+        idx2pnt
+    };
 
     // projects points & covariance 2D
-    for point in points.iter_mut() {
+    let mut pnt2pixxydepth = vec!();
+    let mut pnt2pixconvinv = vec!();
+    let mut pnt2pixaabb = vec!();
+    let num_pnt = pnt2xyz.len() / 3;
+    for i_pnt in 0..num_pnt {
         // screen position
-        {
-            let x = (point.pos_ndc[0] + 1.0) * 0.5 * (img_shape.0 as f32);
-            let y = (1.0 - point.pos_ndc[1]) * 0.5 * (img_shape.1 as f32);
-            point.s = nalgebra::Vector2::new(x, y);
-        }
-        let w = nalgebra::Matrix3::<f32>::new(
-            cam_modelview[0],
-            cam_modelview[4],
-            cam_modelview[8],
-            cam_modelview[1],
-            cam_modelview[5],
-            cam_modelview[9],
-            cam_modelview[2],
-            cam_modelview[6],
-            cam_modelview[10],
-        );
+        let pixx = (pnt2ndc[i_pnt*3+0] + 1.0) * 0.5 * (img_shape.0 as f32);
+        let pixy = (1.0 - pnt2ndc[i_pnt*3+1]) * 0.5 * (img_shape.1 as f32);
+        pnt2pixxydepth.extend_from_slice(&[pixx, pixy, pnt2ndc[i_pnt*3+2]]);
+        let w = del_geo_core::mat4_col_major::to_mat3_col_major_xyz(&cam_modelview);
         use del_geo_core::mat4_col_major::transform_homogeneous;
-        let q = transform_homogeneous(&cam_modelview, &point.pos_world).unwrap();
-        let cam_projection = nalgebra::Matrix4::<f32>::from_column_slice(&cam_projection);
-        let q = nalgebra::Vector3::<f32>::from_column_slice(&q);
-        let j = del_geo_nalgebra::mat4::jacobian_transform(&cam_projection, &q);
-        let r = nalgebra::Matrix2x3::<f32>::new(
+        let xyz = arrayref::array_ref![pnt2xyz, i_pnt*3, 3];
+        let q = transform_homogeneous(&cam_modelview, &xyz).unwrap();
+        let j: [f32;9] = del_geo_core::mat4_col_major::jacobian_transform(&cam_projection, &q); // 3x3
+        let r = [ // 2x3
             0.5 * (img_shape.0 as f32),
-            0.,
             0.,
             0.,
             -0.5 * (img_shape.1 as f32),
             0.,
-        );
-        let w0 = r * j * w * point.sigma * w.transpose() * j.transpose() * r.transpose();
-        let w0 = w0.try_inverse().unwrap();
-        point.w = w0;
+            0.,
+        ];
+        use del_geo_core::mat3_col_major::Mat3ColMajor;
+        let jw = j.mult_mat_col_major(&w);
+        let conv = arrayref::array_ref![pnt2sigma, i_pnt*9, 9];
+        let l_conv = jw.mult_mat_col_major(conv).mult_mat_col_major(&jw.transpose());
+        // let w0 = r * j * w * point.sigma * w.transpose() * j.transpose() * r.transpose();
+        let tmp0 = del_geo_core::mat2x3_col_major::mult_mat3_col_major(&r, &l_conv);
+        let rt = del_geo_core::mat2x3_col_major::transpose(&r);
+        let pixconv = del_geo_core::mat2x3_col_major::mult_mat3x2_col_major(&tmp0, &rt);
+        let pixconvinv = del_geo_core::mat2_col_major::try_inverse(&pixconv).unwrap();
+        pnt2pixconvinv.extend_from_slice(&pixconvinv);
         // screen aabb
         {
-            let aabb = del_geo_core::mat2_sym::aabb2(&[w0.m11, w0.m12, w0.m22]);
-            let aabb = del_geo_core::aabb2::scale(&aabb, 3.0);
-            let aabb = del_geo_core::aabb2::translate(&aabb, &[point.s[0], point.s[1]]);
-            point.aabb = aabb;
+            let pixaabb = del_geo_core::mat2_sym::aabb2(&[pixconvinv[0], pixconvinv[1], pixconvinv[3]]);
+            let pixaabb = del_geo_core::aabb2::scale(&pixaabb, 3.0);
+            let pixaabb = del_geo_core::aabb2::translate(&pixaabb, &[pixx, pixy]);
+            pnt2pixaabb.extend_from_slice(&pixaabb);
         }
     }
 
@@ -150,12 +164,14 @@ fn main() -> anyhow::Result<()> {
             img_data[(i_y * img_size.0 + i_x) * 3 + 2] = point.color[2];
         }
          */
+        /*
         let img_data = del_splat_core::splat_point2::draw(&img_shape, &points);
         del_canvas::write_png_from_float_image_rgb(
             "target/points3d_pix.png",
             &img_shape,
             &img_data,
         )?;
+         */
     }
 
     {
@@ -164,32 +180,39 @@ fn main() -> anyhow::Result<()> {
         let now = std::time::Instant::now();
         let tile_shape: (usize, usize) = (img_shape.0 / TILE_SIZE, img_shape.1 / TILE_SIZE);
         let mut tile2gauss: Vec<Vec<usize>> = vec![vec!(); tile_shape.0 * tile_shape.1];
-        for (i_gauss, point) in points.iter().enumerate().rev() {
-            let tiles = del_geo_core::aabb2::overlapping_tiles(&point.aabb, TILE_SIZE, tile_shape);
+        for idx in (0..num_pnt).rev() {
+            let i_pnt = idx2pnt[idx];
+            let pixaabb = arrayref::array_ref![pnt2pixaabb, i_pnt * 4, 4];
+            let tiles = del_geo_core::aabb2::overlapping_tiles(pixaabb, TILE_SIZE, tile_shape);
             for i_tile in tiles {
-                tile2gauss[i_tile].push(i_gauss);
+                tile2gauss[i_tile].push(i_pnt);
             }
         }
         let mut img_data = vec![0f32; img_shape.1 * img_shape.0 * 3];
         for ih in 0..img_shape.1 {
             for iw in 0..img_shape.0 {
-                let t = nalgebra::Vector2::<f32>::new(iw as f32 + 0.5, ih as f32 + 0.5);
+                let t = [iw as f32 + 0.5, ih as f32 + 0.5];
                 let mut alpha_sum = 0f32;
                 let mut alpha_occu = 1f32;
                 let i_tile = (ih / TILE_SIZE) * tile_shape.0 + (iw / TILE_SIZE);
-                for &i_point in tile2gauss[i_tile].iter() {
-                    let point = &points[i_point];
+                for &i_pnt in tile2gauss[i_tile].iter() {
                     // front to back
-                    if !del_geo_core::aabb2::is_include_point2(&point.aabb, &[t[0], t[1]]) {
+                    let pixaabb = arrayref::array_ref![pnt2pixaabb, i_pnt * 4, 4];
+                    if !del_geo_core::aabb2::is_include_point2(pixaabb, &[t[0], t[1]]) {
                         continue;
                     }
-                    let t0 = t - point.s;
-                    let e = (t0.transpose() * point.w * t0).x;
+                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt*3, 2];
+                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt*4, 4];
+                    let t0 = del_geo_core::vec2::sub(&t, pixmu);
+                    use del_geo_core::mat2_col_major::Mat2ColMajor;
+                    use del_geo_core::vec2::Vec2;
+                    let e = pixconvinv.mult_vec(&t0).dot(&t0);
                     let e = (-0.5 * e).exp();
                     let e_out = alpha_occu * e;
-                    img_data[(ih * img_shape.0 + iw) * 3 + 0] += point.color[0] * e_out;
-                    img_data[(ih * img_shape.0 + iw) * 3 + 1] += point.color[1] * e_out;
-                    img_data[(ih * img_shape.0 + iw) * 3 + 2] += point.color[2] * e_out;
+                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt*3, 3];
+                    img_data[(ih * img_shape.0 + iw) * 3 + 0] += rgb[0] * e_out;
+                    img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
+                    img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
                     alpha_occu *= 1f32 - e;
                     alpha_sum += e_out;
                     if alpha_sum > 0.999 {
@@ -246,21 +269,26 @@ fn main() -> anyhow::Result<()> {
         let mut img_data = vec![0f32; img_shape.1 * img_shape.0 * 3];
         for ih in 0..img_shape.1 {
             for iw in 0..img_shape.0 {
-                let t = nalgebra::Vector2::<f32>::new(iw as f32 + 0.5, ih as f32 + 0.5);
+                let t = [iw as f32 + 0.5, ih as f32 + 0.5];
                 let mut alpha_sum = 0f32;
                 let mut alpha_occu = 1f32;
-                for point in points.iter().rev() {
+                for idx in (0..num_pnt).rev() {
+                    let i_pnt = idx2pnt[idx];
+                    let pixaabb = arrayref::array_ref![pnt2pixaabb, i_pnt * 4, 4];
                     // front to back
-                    if !del_geo_core::aabb2::is_include_point2(&point.aabb, &[t[0], t[1]]) {
+                    if !del_geo_core::aabb2::is_include_point2(&pixaabb, &[t[0], t[1]]) {
                         continue;
                     }
-                    let t0 = t - point.s;
-                    let e = (t0.transpose() * point.w * t0).x;
+                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt*3, 2];
+                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt*4, 4];
+                    let t0 = del_geo_core::vec2::sub(&t, pixmu);
+                    let e = pixconvinv.mult_vec(&t0).dot(&t0);
                     let e = (-0.5 * e).exp();
                     let e_out = alpha_occu * e;
-                    img_data[(ih * img_shape.0 + iw) * 3 + 0] += point.color[0] * e_out;
-                    img_data[(ih * img_shape.0 + iw) * 3 + 1] += point.color[1] * e_out;
-                    img_data[(ih * img_shape.0 + iw) * 3 + 2] += point.color[2] * e_out;
+                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt*3, 3];
+                    img_data[(ih * img_shape.0 + iw) * 3 + 0] += rgb[0] * e_out;
+                    img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
+                    img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
                     alpha_occu *= 1f32 - e;
                     alpha_sum += e_out;
                     if alpha_sum > 0.999 {
@@ -284,19 +312,26 @@ fn main() -> anyhow::Result<()> {
         let mut img_data = vec![0f32; img_shape.1 * img_shape.0 * 3];
         for ih in 0..img_shape.1 {
             for iw in 0..img_shape.0 {
-                let t = nalgebra::Vector2::<f32>::new(iw as f32 + 0.5, ih as f32 + 0.5);
-                for point in points.iter().rev() {
-                    if !del_geo_core::aabb2::is_include_point2(&point.aabb, &[t[0], t[1]]) {
+                let t = [iw as f32 + 0.5, ih as f32 + 0.5];
+                for idx in (0..num_pnt).rev() {
+                    let i_pnt = idx2pnt[idx];
+                    let pixaabb = arrayref::array_ref![pnt2pixaabb, i_pnt * 4, 4];
+                    if !del_geo_core::aabb2::is_include_point2(pixaabb, &[t[0], t[1]]) {
                         continue;
                     }
-                    let t0 = t - point.s;
-                    let a = (t0.transpose() * point.w * t0).x;
+                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt*3, 2];
+                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt*4, 4];
+                    let t0 = del_geo_core::vec2::sub(&t, pixmu);
+                    use del_geo_core::mat2_col_major::Mat2ColMajor;
+                    use del_geo_core::vec2::Vec2;
+                    let a = pixconvinv.mult_vec(&t0).dot(&t0);
                     if a > 1f32 {
                         continue;
                     }
-                    img_data[(ih * img_shape.0 + iw) * 3 + 0] = point.color[0];
-                    img_data[(ih * img_shape.0 + iw) * 3 + 1] = point.color[1];
-                    img_data[(ih * img_shape.0 + iw) * 3 + 2] = point.color[2];
+                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt*3, 3];
+                    img_data[(ih * img_shape.0 + iw) * 3 + 0] = rgb[0];
+                    img_data[(ih * img_shape.0 + iw) * 3 + 1] = rgb[1];
+                    img_data[(ih * img_shape.0 + iw) * 3 + 2] = rgb[2];
                     break;
                 }
             }

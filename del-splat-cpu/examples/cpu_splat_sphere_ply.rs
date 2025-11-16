@@ -1,60 +1,10 @@
 use num_traits::cast::AsPrimitive;
 
-#[derive(Clone, Default)]
-pub struct Splat3 {
-    xyz: [f32; 3],
-    rgb: [u8; 3],
-}
-
-impl del_msh_cpu::io_ply::XyzRgb for Splat3 {
-    fn new(xyz: [f64; 3], rgb: [u8; 3]) -> Self {
-        Splat3 {
-            xyz: xyz.map(|v| v as f32),
-            rgb,
-        }
-    }
-}
-
-impl del_msh_cpu::vtx2point::HasXyz<f32> for Splat3 {
-    fn xyz(&self) -> &[f32; 3] {
-        &self.xyz
-    }
-}
-
-#[derive(Clone)]
-struct Splat2 {
-    ndc_z: f32,
-    pos_pix: [f32; 2],
-    rad_pix: f32,
-    rgb: [f32; 3],
-}
-
-impl del_splat_core::splat_circle::Splat2 for Splat2 {
-    fn ndc_z(&self) -> f32 {
-        self.ndc_z
-    }
-    fn property(&self) -> (&[f32; 2], f32, &[f32; 3]) {
-        (&self.pos_pix, self.rad_pix, &self.rgb)
-    }
-}
-
-impl del_splat_core::splat_point2::Splat2 for Splat2 {
-    fn pos2_rgb(&self) -> ([f32; 2], [f32; 3]) {
-        (self.pos_pix, self.rgb)
-    }
-}
-
-impl del_splat_core::splat_point2::NdcZ for Splat2 {
-    fn ndc_z(&self) -> f32 {
-        self.ndc_z
-    }
-}
-
 fn main() -> anyhow::Result<()> {
     // let path = "/Users/nobuyuki/project/juice_box1.ply";
     let file_path = "asset/juice_box.ply";
-    let pnt2splat3 = del_msh_cpu::io_ply::read_xyzrgb::<_, Splat3>(file_path)?;
-    let aabb3 = del_msh_cpu::vtx2point::aabb3_from_points(&pnt2splat3);
+    let (pnt2xyz, pnt2rgb) = del_splat_core::io_ply::read_xyzrgb::<_>(file_path)?;
+    let aabb3 = del_msh_cpu::vtx2xyz::aabb3(&pnt2xyz, 0f32);
     let aabb3: [f32; 6] = aabb3.map(|v| v.as_());
     let img_shape = (1600usize + 1, 960usize + 1);
     let transform_world2ndc = {
@@ -79,21 +29,12 @@ fn main() -> anyhow::Result<()> {
     };
     let transform_ndc2pix = del_geo_core::mat2x3_col_major::transform_ndc2pix(img_shape);
     let radius = 0.0015;
-    let pnt2splat2 = {
-        // pnt2splat2 from pnt2splat3
-        use del_msh_cpu::vtx2point::HasXyz;
-        let mut vtx2splat = vec![
-            Splat2 {
-                ndc_z: 0f32,
-                pos_pix: [0f32; 2],
-                rad_pix: 0f32,
-                rgb: [0f32; 3],
-            };
-            pnt2splat3.len()
-        ];
-        for i_elem in 0..pnt2splat3.len() {
-            let pos_world0 = pnt2splat3[i_elem].xyz();
-            let pos_world0: [f32; 3] = pos_world0.map(|v| v.as_());
+    let (pnt2pixcodepth, pnt2pixrad) = {
+        let num_pnt = pnt2xyz.len() / 3;
+        let mut pnt2pixcodepth = vec![0f32; num_pnt * 3];
+        let mut pnt2pixrad = vec![0f32; num_pnt];
+        for i_pnt in 0..num_pnt {
+            let pos_world0 = arrayref::array_ref![pnt2xyz, i_pnt * 3, 3];
             let ndc0 = del_geo_core::mat4_col_major::transform_homogeneous(
                 &transform_world2ndc,
                 &pos_world0,
@@ -117,27 +58,34 @@ fn main() -> anyhow::Result<()> {
                     (1.0 / del_geo_core::vec3::norm(&dy)) * 0.5 * img_shape.1 as f32 * radius;
                 0.5 * (rad_pix_x + rad_pxi_y)
             };
-
-            vtx2splat[i_elem].ndc_z = ndc0[2];
-            vtx2splat[i_elem].pos_pix = pos_pix;
-            vtx2splat[i_elem].rad_pix = rad_pix;
-            vtx2splat[i_elem].rgb = [
-                (pnt2splat3[i_elem].rgb[0] as f32) / 255.0,
-                (pnt2splat3[i_elem].rgb[1] as f32) / 255.0,
-                (pnt2splat3[i_elem].rgb[2] as f32) / 255.0,
-            ];
+            pnt2pixcodepth[i_pnt * 3 + 0] = pos_pix[0];
+            pnt2pixcodepth[i_pnt * 3 + 1] = pos_pix[1];
+            pnt2pixcodepth[i_pnt * 3 + 2] = ndc0[2];
+            pnt2pixrad[i_pnt] = rad_pix;
         }
-        vtx2splat
+        (pnt2pixcodepth, pnt2pixrad)
     };
-    del_splat_core::splat_point2::draw_pix_sort_z(
-        &pnt2splat2,
-        img_shape,
-        "target/del_canvas_cpu__splat_sphere__pix_sort_z.png",
-    )?;
+    {
+        let mut img_data = vec![[0f32; 3]; img_shape.0 * img_shape.1];
+        del_splat_core::splat_point2::draw_pix_sort_z_(
+            &pnt2pixcodepth,
+            &pnt2rgb,
+            img_shape.0,
+            &mut img_data,
+        )?;
+        use ::slice_of_array::SliceFlatExt; // for flat
+        del_canvas::write_png_from_float_image_rgb(
+            "target/del_canvas_cpu__splat_sphere__pix_sort_z.png",
+            &img_shape,
+            img_data.flat(),
+        )?;
+    }
     {
         let now = std::time::Instant::now();
-        del_splat_core::splat_circle::draw_sort_z(
-            &pnt2splat2,
+        del_splat_core::splat_circle::draw_sort_z_(
+            &pnt2pixcodepth,
+            &pnt2pixrad,
+            &pnt2rgb,
             img_shape,
             "target/del_canvas_cpu__splat_sphere__sort_z.png",
         )?;
@@ -154,17 +102,8 @@ fn main() -> anyhow::Result<()> {
         img_shape.0 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
         img_shape.1 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
     );
-    let point2aabbdepth = |i_point: usize| {
-        let splat2 = &pnt2splat2[i_point];
-        let aabb = del_geo_core::aabb2::from_point(&splat2.pos_pix, splat2.rad_pix);
-        (aabb, splat2.ndc_z)
-    };
-    let (tile2ind, ind2pnt) = del_splat_core::tile_acceleration::tile2pnt(
-        pnt2splat2.len(),
-        point2aabbdepth,
-        img_shape,
-        TILE_SIZE,
-    );
+    let (tile2ind, ind2pnt) =
+        del_splat_core::tile_acceleration::hoge(&pnt2pixcodepth, &pnt2pixrad, img_shape, TILE_SIZE);
     //
     println!("   Elapsed tile2pnt: {:.2?}", now.elapsed());
     let now = std::time::Instant::now();
@@ -181,19 +120,19 @@ fn main() -> anyhow::Result<()> {
         let i_pix = ih * img_shape.0 + iw;
         for &i_pnt in &ind2pnt[tile2ind[i_tile]..tile2ind[i_tile + 1]] {
             // splat back to front
-            let ndc_z = pnt2splat2[i_pnt].ndc_z;
+            let ndc_z = pnt2pixcodepth[i_pnt * 3 + 2];
             if ndc_z <= -1f32 || ndc_z >= 1f32 {
                 continue;
             }
-            let pos_pix = pnt2splat2[i_pnt].pos_pix;
-            let rad_pix = pnt2splat2[i_pnt].rad_pix;
+            let pos_pix = arrayref::array_ref![pnt2pixcodepth, i_pnt * 3, 2];
+            let rad_pix = pnt2pixrad[i_pnt];
             let pos_pixel_center = [iw as f32 + 0.5f32, ih as f32 + 0.5f32];
             if del_geo_core::edge2::length(&pos_pix, &pos_pixel_center) > rad_pix {
                 continue;
             }
-            img_data[i_pix][0] = (pnt2splat3[i_pnt].rgb[0] as f32) / 255.0;
-            img_data[i_pix][1] = (pnt2splat3[i_pnt].rgb[1] as f32) / 255.0;
-            img_data[i_pix][2] = (pnt2splat3[i_pnt].rgb[2] as f32) / 255.0;
+            img_data[i_pix][0] = pnt2rgb[i_pnt * 3 + 0];
+            img_data[i_pix][1] = pnt2rgb[i_pnt * 3 + 1];
+            img_data[i_pix][2] = pnt2rgb[i_pnt * 3 + 2];
         }
     }
     use ::slice_of_array::SliceFlatExt; // for flat

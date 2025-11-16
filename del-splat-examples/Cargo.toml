@@ -7,10 +7,7 @@ license.workspace = true
 
 [features]
 cuda = [
-    "dep:cudarc",
-    "dep:del-msh-cudarc",
     "del-splat-cudarc/cuda",
-    "del-raycast-cudarc/cuda"
 ]
 
 
@@ -19,26 +16,30 @@ anyhow.workspace = true
 num-traits.workspace = true
 slice-of-array.workspace = true
 itertools.workspace = true
-glutin.workspace = true
-glutin-winit.workspace = true
-winit.workspace = true
-raw-window-handle.workspace = true
-image.workspace = true
-del-msh-core.workspace = true
+del-msh-cpu.workspace = true
 del-geo-core.workspace = true
-del-gl-core.workspace = true
-del-gl-winit-glutin.workspace = true
-del-canvas-image.workspace = true
-del-canvas-cpu.workspace = true
+#
+# depend ony for this crate
+glutin = "0.32.2"
+glutin-winit = "0.5.0"
+raw-window-handle = "0.6.2"
+winit = "0.30.9"
+image = "0.25.6"
+eframe = "0.31.1"
+del-gl-core = {path = "../../del-gl/del-gl-core"}
+del-gl-winit-glutin = {path = "../../del-gl/del-gl-winit-glutin"}
+del-canvas = "0.1.7"
+del-splat-core = {workspace = true}
+arrayref = "0.3.9"
 
-cudarc = { workspace = true, optional = true }
-del-msh-cudarc = { workspace = true, optional = true }
+# cuda dependency
+# del-msh-cudarc = { workspace = true, optional = true }
 del-splat-cudarc = { workspace = true, optional = true }
-del-raycast-cudarc = {workspace = true, optional = true }
+# del-raycast-cudarc = {workspace = true, optional = true }
 
 [build-dependencies]
-gl_generator.workspace = true
-cfg_aliases.workspace = true
+gl_generator = "0.14.0"
+cfg_aliases = "0.2.1"
 
 [dev-dependencies]
 rand.workspace = true

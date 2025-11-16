@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 num-traits.workspace = true
 rand.workspace = true
-nalgebra.workspace = true
 anyhow.workspace = true
 rand_chacha.workspace = true
 slice-of-array.workspace = true
@@ -15,6 +14,5 @@ itertools.workspace = true
 byteorder.workspace = true
 #
 del-geo-core.workspace = true
-del-geo-nalgebra.workspace = true
 del-msh-cpu.workspace = true
 del-canvas.workspace = true

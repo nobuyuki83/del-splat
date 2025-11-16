@@ -4,8 +4,6 @@ use cudarc::driver::{CudaSlice, DeviceSlice};
 use del_splat_cudarc::splat_gauss::Splat2;
 
 use winit::dpi::PhysicalSize;
-use winit::event_loop::EventLoop;
-use winit::window::Window;
 //
 
 #[cfg(feature = "cuda")]

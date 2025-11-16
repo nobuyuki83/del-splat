@@ -80,6 +80,8 @@ where
     (tile2jdx, jdx2idx, idx2point)
 }
 
+/*
+
 struct Splat<'a> {
     data: &'a [f32; 10],
 }
@@ -474,6 +476,67 @@ where
             let (pos_pix, sig_inv, rgb, alpha) = splat2.property();
             let t0 = [t[0] - pos_pix[0], t[1] - pos_pix[1]];
             let e = del_geo_core::mat2_sym::mult_vec_from_both_sides(sig_inv, &t0, &t0);
+            let e = (-0.5 * e).exp() * alpha;
+            let e_out = alpha_occu * e;
+            img_data[(ih * img_shape.0 + iw) * 3] += rgb[0] * e_out;
+            img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
+            img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
+            alpha_occu *= 1f32 - e;
+            alpha_sum += e_out;
+            if alpha_sum > 0.999 {
+                break;
+            }
+        }
+    }
+    del_canvas::write_png_from_float_image_rgb(path, &img_shape, &img_data)?;
+    Ok(())
+}
+ */
+
+pub fn rasterize_naive_<Path>(
+    pnt2pixcodepth: &[f32],
+    pnt2siginv: &[f32],
+    pnt2aabb: &[f32],
+    pnt2alpha: &[f32],
+    pnt2rgb: &[f32],
+    img_shape: (usize, usize),
+    path: Path,
+) -> anyhow::Result<()>
+where
+    Path: AsRef<std::path::Path>,
+{
+    let num_pnt = pnt2pixcodepth.len() / 3;
+    let idx2pnt = {
+        let mut idx2pnt: Vec<usize> = (0..num_pnt).collect();
+        idx2pnt.sort_by(|&i, &j| {
+            let zi = pnt2pixcodepth[i * 3 + 2] + 1f32;
+            let zj = pnt2pixcodepth[j * 3 + 2] + 1f32;
+            zi.partial_cmp(&zj).unwrap()
+        });
+        idx2pnt
+    };
+    // visualize as Gaussian without tile acceleration
+    let mut img_data = vec![0f32; img_shape.1 * img_shape.0 * 3];
+    for (ih, iw) in itertools::iproduct!(0..img_shape.1, 0..img_shape.0) {
+        let t = [iw as f32 + 0.5, ih as f32 + 0.5];
+        let mut alpha_sum = 0f32;
+        let mut alpha_occu = 1f32;
+        // draw front to back
+        for idx in (0..idx2pnt.len()).rev() {
+            let i_pnt = idx2pnt[idx];
+            if pnt2pixcodepth[i_pnt * 3 + 2] <= -1f32 || pnt2pixcodepth[i_pnt * 3 + 2] >= 1f32 {
+                continue;
+            }
+            let aabb = arrayref::array_ref![pnt2aabb, i_pnt * 4, 4];
+            if !del_geo_core::aabb2::is_include_point2(aabb, &[t[0], t[1]]) {
+                continue;
+            }
+            let pos_pix = arrayref::array_ref![pnt2pixcodepth, i_pnt * 3, 2];
+            let siginv = arrayref::array_ref![pnt2siginv, i_pnt * 3, 3];
+            let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
+            let alpha = pnt2alpha[i_pnt];
+            let t0 = [t[0] - pos_pix[0], t[1] - pos_pix[1]];
+            let e = del_geo_core::mat2_sym::mult_vec_from_both_sides(siginv, &t0, &t0);
             let e = (-0.5 * e).exp() * alpha;
             let e_out = alpha_occu * e;
             img_data[(ih * img_shape.0 + iw) * 3] += rgb[0] * e_out;

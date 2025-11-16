@@ -56,3 +56,23 @@ where
     }
     (tile2ind, ind2vtx)
 }
+
+pub fn hoge<INDEX>(
+    pnt2pixcodepth: &[f32],
+    pnt2pixrad: &[f32],
+    img_shape: (usize, usize),
+    tile_size: usize,
+) -> (Vec<INDEX>, Vec<INDEX>)
+where
+    INDEX: num_traits::PrimInt + std::ops::AddAssign<INDEX> + AsPrimitive<usize>,
+    usize: AsPrimitive<INDEX>,
+{
+    let num_pnt = pnt2pixcodepth.len() / 3;
+    assert_eq!(pnt2pixrad.len(), num_pnt);
+    let point2aabbdepth = |i_point: usize| {
+        let pixco = arrayref::array_ref![pnt2pixcodepth, i_point * 3, 2];
+        let aabb = del_geo_core::aabb2::from_point(pixco, pnt2pixrad[i_point]);
+        (aabb, pnt2pixcodepth[i_point * 3 + 2])
+    };
+    tile2pnt::<_, INDEX>(num_pnt, point2aabbdepth, img_shape, tile_size)
+}

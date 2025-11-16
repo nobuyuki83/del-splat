@@ -1,9 +1,6 @@
-pub trait Splat3 {
-    fn xyz(&self) -> [f32; 3];
-    fn rgb(&self) -> [f32; 3];
-}
-pub fn draw_pix<S: Splat3, Path>(
-    pnt2splat3: &[S],
+pub fn draw_pix<Path>(
+    pnt2xyz: &[f32],
+    pnt2rgb: &[f32],
     img_shape: (usize, usize),
     transform_world2ndc: &[f32; 16],
     path: Path,
@@ -11,11 +8,12 @@ pub fn draw_pix<S: Splat3, Path>(
 where
     Path: AsRef<std::path::Path>,
 {
+    let num_pnt = pnt2xyz.len() / 3;
     let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1]; // black
     let transform_ndc2pix = del_geo_core::mat2x3_col_major::transform_ndc2pix(img_shape);
-    for splat3 in pnt2splat3 {
-        let xyz = splat3.xyz();
-        let rgb = splat3.rgb();
+    for i_pnt in 0..num_pnt {
+        let xyz = arrayref::array_ref![pnt2xyz, i_pnt * 3, 3];
+        let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
         let q0 =
             del_geo_core::mat4_col_major::transform_homogeneous(transform_world2ndc, &xyz).unwrap();
         let r0 =
