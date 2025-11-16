@@ -15,7 +15,7 @@ fn main() -> anyhow::Result<()> {
     let file_path = "asset/dog.ply";
     let (pnt2xyz, pnt2rgb, pnt2op, pnt2scale, pnt2quat) = {
         let (mut pnt2xyz, pnt2rgb, _pnt2sh, pnt2op, mut pnt2scale, pnt2quat) =
-            del_splat_core::io_ply::read_3d_gauss_splat(file_path)?;
+            del_splat_cpu::io_ply::read_3d_gauss_splat(file_path)?;
         let aabb3 = del_msh_cpu::vtx2xyz::aabb3(&pnt2xyz, 0f32);
         let longest_edge = del_geo_core::aabb3::max_edge_size(&aabb3);
         let scale = 1.0 / longest_edge;
@@ -53,7 +53,7 @@ fn main() -> anyhow::Result<()> {
         del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
     let transform_ndc2pix = del_geo_core::mat2x3_col_major::transform_ndc2pix(img_shape);
-    del_splat_core::splat_point3::draw_pix(
+    del_splat_cpu::splat_point3::draw_pix(
         &pnt2xyz,
         &pnt2rgb,
         img_shape,
@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
     {
         println!("gaussian_naive");
         let now = std::time::Instant::now();
-        del_splat_core::splat_gaussian2::rasterize_naive_(
+        del_splat_cpu::splat_gaussian2::rasterize_naive_(
             &pnt2pixcodepth,
             &pnt2siginv,
             &pnt2aabb,

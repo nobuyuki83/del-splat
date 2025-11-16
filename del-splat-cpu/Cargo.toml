@@ -1,5 +1,5 @@
 [package]
-name = "del-splat-core"
+name = "del-splat-cpu"
 version.workspace = true
 edition.workspace = true
 

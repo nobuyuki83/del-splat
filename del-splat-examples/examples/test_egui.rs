@@ -16,7 +16,7 @@ impl MyApp {
     fn initialize(&mut self) -> eframe::Result<()> {
         // let path = "/Users/nobuyuki/project/juice_box1.ply";
         let file_path = "asset/juice_box.ply";
-        (self.point2xyz, self.point2rgb) = del_splat_core::io_ply::read_xyzrgb(file_path).unwrap();
+        (self.point2xyz, self.point2rgb) = del_splat_cpu::io_ply::read_xyzrgb(file_path).unwrap();
         Ok(())
     }
 
@@ -89,7 +89,7 @@ impl MyApp {
         let img_height = img_shape.1 as usize;
         let num_pixel = img_width * img_height;
         let mut img_data = vec![[0f32; 3]; num_pixel];
-        del_splat_core::splat_point2::draw_pix_sort_z_(
+        del_splat_cpu::splat_point2::draw_pix_sort_z_(
             &pnt2pixxydepth,
             &self.point2rgb,
             img_width,

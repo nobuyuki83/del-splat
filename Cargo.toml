@@ -30,7 +30,7 @@ byteorder = "1.5.0"
 # internal
 del-splat-cudarc-kernel = {path= "del-splat-cuda-kernel" }
 del-splat-cudarc = {path= "del-splat-cudarc" }
-del-splat-core = {path= "del-splat-cpu" }
+del-splat-cpu = {path= "del-splat-cpu" }
 
 # for develop
 # del-geo-core = {path = "../del-geo/del-geo-core" }

@@ -21,9 +21,9 @@ impl del_splat_core::splat_circle::Splat2 for Splat2 {
 fn main() -> anyhow::Result<()> {
     let path_dir: String =
         "C:/Users/nobuy/Downloads/small_data_colmap/colmap_data/sparse/0/".to_string();
-    let cameras = del_splat_core::colmap::read_cameras(path_dir.clone() + "cameras.bin")?;
-    let images = del_splat_core::colmap::read_images(path_dir.clone() + "images.bin")?;
-    let points3d = del_splat_core::colmap::read_points3d(path_dir.clone() + "points3D.bin")?;
+    let cameras = del_splat_cpu::colmap::read_cameras(path_dir.clone() + "cameras.bin")?;
+    let images = del_splat_cpu::colmap::read_images(path_dir.clone() + "images.bin")?;
+    let points3d = del_splat_cpu::colmap::read_points3d(path_dir.clone() + "points3D.bin")?;
     let pntid2pntidx = {
         let maxid = points3d.iter().map(|v| v.id).max().unwrap();
         let mut pntid2pntidx = vec![-1i32; maxid as usize + 1];

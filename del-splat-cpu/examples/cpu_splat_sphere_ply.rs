@@ -3,7 +3,7 @@ use num_traits::cast::AsPrimitive;
 fn main() -> anyhow::Result<()> {
     // let path = "/Users/nobuyuki/project/juice_box1.ply";
     let file_path = "asset/juice_box.ply";
-    let (pnt2xyz, pnt2rgb) = del_splat_core::io_ply::read_xyzrgb::<_>(file_path)?;
+    let (pnt2xyz, pnt2rgb) = del_splat_cpu::io_ply::read_xyzrgb::<_>(file_path)?;
     let aabb3 = del_msh_cpu::vtx2xyz::aabb3(&pnt2xyz, 0f32);
     let aabb3: [f32; 6] = aabb3.map(|v| v.as_());
     let img_shape = (1600usize + 1, 960usize + 1);
@@ -67,7 +67,7 @@ fn main() -> anyhow::Result<()> {
     };
     {
         let mut img_data = vec![[0f32; 3]; img_shape.0 * img_shape.1];
-        del_splat_core::splat_point2::draw_pix_sort_z_(
+        del_splat_cpu::splat_point2::draw_pix_sort_z_(
             &pnt2pixcodepth,
             &pnt2rgb,
             img_shape.0,
@@ -82,7 +82,7 @@ fn main() -> anyhow::Result<()> {
     }
     {
         let now = std::time::Instant::now();
-        del_splat_core::splat_circle::draw_sort_z_(
+        del_splat_cpu::splat_circle::draw_sort_z_(
             &pnt2pixcodepth,
             &pnt2pixrad,
             &pnt2rgb,
@@ -103,7 +103,7 @@ fn main() -> anyhow::Result<()> {
         img_shape.1 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
     );
     let (tile2ind, ind2pnt) =
-        del_splat_core::tile_acceleration::hoge(&pnt2pixcodepth, &pnt2pixrad, img_shape, TILE_SIZE);
+        del_splat_cpu::tile_acceleration::hoge(&pnt2pixcodepth, &pnt2pixrad, img_shape, TILE_SIZE);
     //
     println!("   Elapsed tile2pnt: {:.2?}", now.elapsed());
     let now = std::time::Instant::now();
