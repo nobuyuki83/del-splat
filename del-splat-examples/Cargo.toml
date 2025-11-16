@@ -26,8 +26,6 @@ raw-window-handle = "0.6.2"
 winit = "0.30.9"
 image = "0.25.6"
 eframe = "0.31.1"
-del-gl-core = {path = "../../del-gl/del-gl-core"}
-del-gl-winit-glutin = {path = "../../del-gl/del-gl-winit-glutin"}
 del-canvas = "0.1.7"
 del-splat-core = {workspace = true}
 arrayref = "0.3.9"

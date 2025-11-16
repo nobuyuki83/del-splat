@@ -1,4 +1,3 @@
-
 /*
 struct Splat2 {
     ndc_z: f32,

@@ -4,69 +4,6 @@ use eframe::{
     egui::{ColorImage, TextureHandle},
 };
 
-/*
-#[derive(Clone, Default)]
-pub struct XyzRgb {
-    xyz: [f32; 3],
-    rgb: [u8; 3],
-}
-
- */
-
-/*
-impl del_msh_cpu::io_ply::XyzRgb for XyzRgb {
-    fn new(xyz: [f64; 3], rgb: [u8; 3]) -> Self {
-        XyzRgb {
-            xyz: xyz.map(|v| v as f32),
-            rgb,
-        }
-    }
-}
-
-impl del_msh_cpu::vtx2point::HasXyz<f32> for XyzRgb {
-    fn xyz(&self) -> &[f32; 3] {
-        &self.xyz
-    }
-}
- */
-
-// ----------
-
-/*
-#[derive(Clone)]
-struct Splat2 {
-    ndc_z: f32,
-    rad_pix: f32,
-    pos_pix: [f32; 2],
-    rgb: [f32; 3],
-}
- */
-
-/*
-impl del_splat_core::splat_circle::Splat2 for Splat2 {
-    fn ndc_z(&self) -> f32 {
-        self.ndc_z
-    }
-    fn property(&self) -> (&[f32; 2], f32, &[f32; 3]) {
-        (&self.pos_pix, self.rad_pix, &self.rgb)
-    }
-}
- */
-
-/*
-impl del_splat_core::splat_point2::XyRgb for Splat2 {
-    fn pos2_rgb(&self) -> ([f32; 2], [f32; 3]) {
-        (self.pos_pix, self.rgb)
-    }
-}
-
-impl del_splat_core::splat_point2::NdcZ for Splat2 {
-    fn ndc_z(&self) -> f32 {
-        self.ndc_z
-    }
-}
- */
-
 // ----------
 
 pub struct MyApp {

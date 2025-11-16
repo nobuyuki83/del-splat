@@ -41,10 +41,10 @@ fn main() -> anyhow::Result<()> {
     let (pnt2xyz, pnt2rgb, pnt2sigma) = {
         let num_pnt = 10000;
         // let mut points: Vec<Point> = vec![];
-        let mut pnt2xyz = vec!();
-        let mut pnt2nrm = vec!();
-        let mut pnt2rgb = vec!();
-        let mut pnt2conv = vec!();
+        let mut pnt2xyz = vec![];
+        let mut pnt2nrm = vec![];
+        let mut pnt2rgb = vec![];
+        let mut pnt2conv = vec![];
         let cumsumarea = del_msh_cpu::trimesh::tri2cumsumarea(&tri2vtx, &vtx2xyz, 3);
         // let mut reng = rand::thread_rng();
         use rand::SeedableRng;
@@ -63,9 +63,11 @@ fn main() -> anyhow::Result<()> {
             ];
             let rad = 0.03;
             use del_geo_core::mat3_col_major::Mat3ColMajor;
-            let conv = del_geo_core::mat3_col_major::from_diagonal(&[rad * rad, rad*rad, rad*rad]);
+            let conv =
+                del_geo_core::mat3_col_major::from_diagonal(&[rad * rad, rad * rad, rad * rad]);
             let un = del_geo_core::vec3::normalize(&normal_world);
-            let tmp0 = del_geo_core::mat3_col_major::from_scaled_outer_product(rad * rad * 0.99, &un, &un);
+            let tmp0 =
+                del_geo_core::mat3_col_major::from_scaled_outer_product(rad * rad * 0.99, &un, &un);
             let conv = conv.sub(&tmp0);
             //
             pnt2xyz.extend_from_slice(&pos_world);
@@ -91,14 +93,18 @@ fn main() -> anyhow::Result<()> {
         del_geo_core::mat4_col_major::mult_mat_col_major(&cam_projection, &cam_modelview);
 
     // transform points
-    let pnt2ndc: Vec<f32> = pnt2xyz.chunks(3).flat_map(|xyz|
-        del_geo_core::mat4_col_major::transform_homogeneous(
-            &transform_world2ndc,
-            arrayref::array_ref![xyz, 0, 3]
-        ).unwrap()
-    ).collect();
+    let pnt2ndc: Vec<f32> = pnt2xyz
+        .chunks(3)
+        .flat_map(|xyz| {
+            del_geo_core::mat4_col_major::transform_homogeneous(
+                &transform_world2ndc,
+                arrayref::array_ref![xyz, 0, 3],
+            )
+            .unwrap()
+        })
+        .collect();
     let idx2pnt = {
-        let num_pnt= pnt2ndc.len() / 3;
+        let num_pnt = pnt2ndc.len() / 3;
         let mut idx2pnt: Vec<usize> = (0..num_pnt).collect();
         idx2pnt.sort_by(|&i, &j| {
             let zi = pnt2ndc[i * 3 + 2] + 1f32;
@@ -109,21 +115,22 @@ fn main() -> anyhow::Result<()> {
     };
 
     // projects points & covariance 2D
-    let mut pnt2pixxydepth = vec!();
-    let mut pnt2pixconvinv = vec!();
-    let mut pnt2pixaabb = vec!();
+    let mut pnt2pixxydepth = vec![];
+    let mut pnt2pixconvinv = vec![];
+    let mut pnt2pixaabb = vec![];
     let num_pnt = pnt2xyz.len() / 3;
     for i_pnt in 0..num_pnt {
         // screen position
-        let pixx = (pnt2ndc[i_pnt*3+0] + 1.0) * 0.5 * (img_shape.0 as f32);
-        let pixy = (1.0 - pnt2ndc[i_pnt*3+1]) * 0.5 * (img_shape.1 as f32);
-        pnt2pixxydepth.extend_from_slice(&[pixx, pixy, pnt2ndc[i_pnt*3+2]]);
+        let pixx = (pnt2ndc[i_pnt * 3 + 0] + 1.0) * 0.5 * (img_shape.0 as f32);
+        let pixy = (1.0 - pnt2ndc[i_pnt * 3 + 1]) * 0.5 * (img_shape.1 as f32);
+        pnt2pixxydepth.extend_from_slice(&[pixx, pixy, pnt2ndc[i_pnt * 3 + 2]]);
         let w = del_geo_core::mat4_col_major::to_mat3_col_major_xyz(&cam_modelview);
         use del_geo_core::mat4_col_major::transform_homogeneous;
-        let xyz = arrayref::array_ref![pnt2xyz, i_pnt*3, 3];
+        let xyz = arrayref::array_ref![pnt2xyz, i_pnt * 3, 3];
         let q = transform_homogeneous(&cam_modelview, &xyz).unwrap();
-        let j: [f32;9] = del_geo_core::mat4_col_major::jacobian_transform(&cam_projection, &q); // 3x3
-        let r = [ // 2x3
+        let j: [f32; 9] = del_geo_core::mat4_col_major::jacobian_transform(&cam_projection, &q); // 3x3
+        let r = [
+            // 2x3
             0.5 * (img_shape.0 as f32),
             0.,
             0.,
@@ -133,8 +140,10 @@ fn main() -> anyhow::Result<()> {
         ];
         use del_geo_core::mat3_col_major::Mat3ColMajor;
         let jw = j.mult_mat_col_major(&w);
-        let conv = arrayref::array_ref![pnt2sigma, i_pnt*9, 9];
-        let l_conv = jw.mult_mat_col_major(conv).mult_mat_col_major(&jw.transpose());
+        let conv = arrayref::array_ref![pnt2sigma, i_pnt * 9, 9];
+        let l_conv = jw
+            .mult_mat_col_major(conv)
+            .mult_mat_col_major(&jw.transpose());
         // let w0 = r * j * w * point.sigma * w.transpose() * j.transpose() * r.transpose();
         let tmp0 = del_geo_core::mat2x3_col_major::mult_mat3_col_major(&r, &l_conv);
         let rt = del_geo_core::mat2x3_col_major::transpose(&r);
@@ -143,7 +152,8 @@ fn main() -> anyhow::Result<()> {
         pnt2pixconvinv.extend_from_slice(&pixconvinv);
         // screen aabb
         {
-            let pixaabb = del_geo_core::mat2_sym::aabb2(&[pixconvinv[0], pixconvinv[1], pixconvinv[3]]);
+            let pixaabb =
+                del_geo_core::mat2_sym::aabb2(&[pixconvinv[0], pixconvinv[1], pixconvinv[3]]);
             let pixaabb = del_geo_core::aabb2::scale(&pixaabb, 3.0);
             let pixaabb = del_geo_core::aabb2::translate(&pixaabb, &[pixx, pixy]);
             pnt2pixaabb.extend_from_slice(&pixaabb);
@@ -201,15 +211,15 @@ fn main() -> anyhow::Result<()> {
                     if !del_geo_core::aabb2::is_include_point2(pixaabb, &[t[0], t[1]]) {
                         continue;
                     }
-                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt*3, 2];
-                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt*4, 4];
+                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt * 3, 2];
+                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt * 4, 4];
                     let t0 = del_geo_core::vec2::sub(&t, pixmu);
                     use del_geo_core::mat2_col_major::Mat2ColMajor;
                     use del_geo_core::vec2::Vec2;
                     let e = pixconvinv.mult_vec(&t0).dot(&t0);
                     let e = (-0.5 * e).exp();
                     let e_out = alpha_occu * e;
-                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt*3, 3];
+                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
                     img_data[(ih * img_shape.0 + iw) * 3 + 0] += rgb[0] * e_out;
                     img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
                     img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
@@ -279,13 +289,13 @@ fn main() -> anyhow::Result<()> {
                     if !del_geo_core::aabb2::is_include_point2(&pixaabb, &[t[0], t[1]]) {
                         continue;
                     }
-                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt*3, 2];
-                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt*4, 4];
+                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt * 3, 2];
+                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt * 4, 4];
                     let t0 = del_geo_core::vec2::sub(&t, pixmu);
                     let e = pixconvinv.mult_vec(&t0).dot(&t0);
                     let e = (-0.5 * e).exp();
                     let e_out = alpha_occu * e;
-                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt*3, 3];
+                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
                     img_data[(ih * img_shape.0 + iw) * 3 + 0] += rgb[0] * e_out;
                     img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
                     img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
@@ -319,8 +329,8 @@ fn main() -> anyhow::Result<()> {
                     if !del_geo_core::aabb2::is_include_point2(pixaabb, &[t[0], t[1]]) {
                         continue;
                     }
-                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt*3, 2];
-                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt*4, 4];
+                    let pixmu = arrayref::array_ref![pnt2pixxydepth, i_pnt * 3, 2];
+                    let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt * 4, 4];
                     let t0 = del_geo_core::vec2::sub(&t, pixmu);
                     use del_geo_core::mat2_col_major::Mat2ColMajor;
                     use del_geo_core::vec2::Vec2;
@@ -328,7 +338,7 @@ fn main() -> anyhow::Result<()> {
                     if a > 1f32 {
                         continue;
                     }
-                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt*3, 3];
+                    let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
                     img_data[(ih * img_shape.0 + iw) * 3 + 0] = rgb[0];
                     img_data[(ih * img_shape.0 + iw) * 3 + 1] = rgb[1];
                     img_data[(ih * img_shape.0 + iw) * 3 + 2] = rgb[2];
