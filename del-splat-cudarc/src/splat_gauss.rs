@@ -1,7 +1,8 @@
-use cudarc::driver::DeviceSlice;
-use del_cudarc_safe::cudarc;
-use del_cudarc_safe::cudarc::driver::PushKernelArg;
+//use cudarc::driver::DeviceSlice;
+//use del_cudarc_safe::cudarc;
+//use del_cudarc_safe::cudarc::driver::PushKernelArg;
 
+/*
 #[derive(Clone, Debug)]
 #[repr(C)]
 pub struct Splat3 {
@@ -41,10 +42,12 @@ impl del_msh_cpu::vtx2point::HasXyz<f32> for Splat3 {
 }
 
 unsafe impl cudarc::driver::DeviceRepr for Splat3 {}
+ */
 
 // above: trait implementation for GSplat3
 // ----------------------------
 
+/*
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct Splat2 {
@@ -69,6 +72,7 @@ impl del_splat_core::splat_gaussian2::Splat2 for Splat2 {
         (&self.pos_pix, &self.sig_inv, &self.rgb, self.alpha)
     }
 }
+ */
 
 /*
 impl del_canvas_cpu::tile_acceleration::Splat2 for Splat2{

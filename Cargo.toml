@@ -5,7 +5,8 @@ members = [
     "del-splat-examples"
 ]
 exclude = [
-    "del-splat-cuda-kernel"
+    "del-splat-cuda-kernel",
+    "del-splat-cuda-kernels"
 ]
 resolver = "2"
 
@@ -28,7 +29,7 @@ itertools = "0.14.0"
 byteorder = "1.5.0"
 
 # internal
-del-splat-cudarc-kernel = {path= "del-splat-cuda-kernel" }
+del-splat-cuda-kernels = {path= "del-splat-cuda-kernels" }
 del-splat-cudarc = {path= "del-splat-cudarc" }
 del-splat-cpu = {path= "del-splat-cpu" }
 

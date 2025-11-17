@@ -1,6 +1,7 @@
-use cudarc::driver::DeviceSlice;
-use del_cudarc_safe::cudarc;
-
+//use cudarc::driver::DeviceSlice;
+use del_cudarc_sys::cu::CUstream;
+use del_cudarc_sys::{cu, CuVec};
+/*
 #[derive(Clone, Default)]
 #[repr(C)]
 pub struct Splat3 {
@@ -34,166 +35,142 @@ pub struct Splat2 {
 }
 
 unsafe impl cudarc::driver::DeviceRepr for Splat2 {}
+ */
 
 pub fn tile2idx_idx2pnt(
-    dev: &std::sync::Arc<cudarc::driver::CudaStream>,
+    stream: CUstream,
     tile_shape: (u32, u32),
-    pnt2splat_dev: &cudarc::driver::CudaSlice<Splat2>,
-) -> anyhow::Result<(
-    cudarc::driver::CudaSlice<u32>,
-    cudarc::driver::CudaSlice<u32>,
-)> {
+    pnt2pixxydepth: &CuVec<f32>,
+    pnt2pixrad: &CuVec<f32>,
+) -> anyhow::Result<(CuVec<u32>, CuVec<u32>)> {
+    let num_pnt = pnt2pixxydepth.n / 3;
+    let num_tile = tile_shape.0 * tile_shape.1;
     let (tile2idx_dev, pnt2ind_dev) = {
-        let num_pnt = pnt2splat_dev.len();
-        let mut tile2idx_dev =
-            dev.alloc_zeros::<u32>((tile_shape.0 * tile_shape.1 + 1) as usize)?;
-        let mut pnt2idx_dev = dev.alloc_zeros::<u32>(num_pnt + 1)?;
-        let cfg = cudarc::driver::LaunchConfig::for_num_elems(num_pnt as u32);
-        let count_splat_in_tile = del_cudarc_safe::get_or_load_func(
-            &dev.context(),
+        let tile2idx = CuVec::<u32>::alloc_zeros(num_tile as usize + 1, stream).unwrap();
+        let pnt2idx = CuVec::<u32>::alloc_zeros(num_pnt + 1, stream).unwrap();
+        let fnc = del_cudarc_sys::cache_func::get_function_cached(
+            "del_splat::splat_sphere",
+            del_splat_cuda_kernels::get("splat_sphere").unwrap(),
             "count_splat_in_tile",
-            del_splat_cudarc_kernel::SPLAT_SPHERE,
-        )?;
+        )
+        .unwrap();
         {
-            use cudarc::driver::PushKernelArg;
-            let mut builder = dev.launch_builder(&count_splat_in_tile);
-            let pnt2splat_dev_len = pnt2splat_dev.len() as u32;
-            let tile_shape_0 = tile_shape.0 as u32;
-            let tile_shape_1 = tile_shape.1 as u32;
-            builder.arg(&pnt2splat_dev_len);
-            builder.arg(pnt2splat_dev);
-            builder.arg(&mut tile2idx_dev);
-            builder.arg(&mut pnt2idx_dev);
-            builder.arg(&tile_shape_0);
-            builder.arg(&tile_shape_1);
-            builder.arg(&16u32);
-            unsafe { builder.launch(cfg) }?;
+            let mut builder = del_cudarc_sys::Builder::new(stream);
+            builder.arg_u32(num_pnt as u32);
+            builder.arg_dptr(pnt2pixxydepth.dptr);
+            builder.arg_dptr(pnt2pixrad.dptr);
+            builder.arg_dptr(tile2idx.dptr);
+            builder.arg_dptr(pnt2idx.dptr);
+            builder.arg_u32(tile_shape.0);
+            builder.arg_u32(tile_shape.1);
+            builder.arg_u32(16u32);
+            unsafe {
+                builder.launch_kernel(
+                    fnc,
+                    del_cudarc_sys::LaunchConfig::for_num_elems(num_pnt as u32),
+                )
+            }
+            .unwrap();
         }
-        /*
-        let param = (
-            pnt2splat_dev.len(),
-            pnt2splat_dev,
-            &mut tile2idx_dev,
-            &mut pnt2idx_dev,
-            tile_shape.0 as u32,
-            tile_shape.1 as u32,
-            16u32,
-        );
-        use cudarc::driver::LaunchAsync;
-        unsafe { count_splat_in_tile.launch(cfg, param) }?;
-         */
-        (tile2idx_dev, pnt2idx_dev)
+        (tile2idx, pnt2idx)
     };
     let tile2idx_dev = {
-        let mut tmp = dev.alloc_zeros(tile2idx_dev.len())?;
-        del_cudarc_safe::cumsum::sum_scan_blelloch(&dev, &mut tmp, &tile2idx_dev)?;
+        let mut tmp = CuVec::<u32>::alloc_zeros(tile2idx_dev.n, stream).unwrap();
+        del_cudarc_sys::cumsum::exclusive_scan(stream, &tile2idx_dev, &mut tmp);
         tmp
     };
     let pnt2idx_dev = {
-        let mut tmp = dev.alloc_zeros::<u32>(pnt2ind_dev.len())?;
-        del_cudarc_safe::cumsum::sum_scan_blelloch(&dev, &mut tmp, &pnt2ind_dev)?;
+        let mut tmp = CuVec::<u32>::alloc_zeros(pnt2ind_dev.n, stream).unwrap();
+        del_cudarc_sys::cumsum::exclusive_scan(stream, &pnt2ind_dev, &mut tmp);
         tmp
     };
-    let num_ind = dev.memcpy_dtov(&pnt2idx_dev)?.last().unwrap().to_owned(); // todo: send only last element to cpu
+    let num_ind = pnt2idx_dev.last().unwrap();
     debug_assert_eq!(
         num_ind,
-        dev.memcpy_dtov(&tile2idx_dev)?.last().unwrap().to_owned()
+        tile2idx_dev
+            .copy_to_host()
+            .unwrap()
+            .last()
+            .unwrap()
+            .to_owned()
     );
     let idx2pnt_dev = {
-        let mut idx2tiledepth_dev = dev.alloc_zeros::<u64>(num_ind as usize)?;
-        let mut idx2pnt_dev = dev.alloc_zeros(num_ind as usize)?;
-        let num_pnt = pnt2splat_dev.len();
-        let cfg = cudarc::driver::LaunchConfig::for_num_elems(num_pnt as u32);
-        let count_splat_in_tile = del_cudarc_safe::get_or_load_func(
-            &dev.context(),
+        let mut idx2tiledepth = CuVec::<u64>::alloc_zeros(num_ind as usize, stream).unwrap();
+        let mut idx2pnt = CuVec::<u32>::alloc_zeros(num_ind as usize, stream).unwrap();
+        let fnc = del_cudarc_sys::cache_func::get_function_cached(
+            "del_splat::splat_sphere",
+            del_splat_cuda_kernels::get("splat_sphere").unwrap(),
             "fill_index_info",
-            del_splat_cudarc_kernel::SPLAT_SPHERE,
-        )?;
+        )
+        .unwrap();
         {
-            use cudarc::driver::PushKernelArg;
-            let mut builder = dev.launch_builder(&count_splat_in_tile);
-            let pnt2splat_dev_len = pnt2splat_dev.len() as u32;
-            let tile_shape_0 = tile_shape.0 as u32;
-            let tile_shape_1 = tile_shape.1 as u32;
-            builder.arg(&pnt2splat_dev_len);
-            builder.arg(pnt2splat_dev);
-            builder.arg(&pnt2idx_dev);
-            builder.arg(&mut idx2tiledepth_dev);
-            builder.arg(&mut idx2pnt_dev);
-            builder.arg(&tile_shape_0);
-            builder.arg(&tile_shape_1);
-            builder.arg(&16u32);
-            unsafe { builder.launch(cfg) }?;
+            let mut builder = del_cudarc_sys::Builder::new(stream);
+            builder.arg_u32(num_pnt as u32);
+            builder.arg_dptr(pnt2pixxydepth.dptr);
+            builder.arg_dptr(pnt2pixrad.dptr);
+            builder.arg_dptr(pnt2idx_dev.dptr);
+            builder.arg_dptr(idx2tiledepth.dptr);
+            builder.arg_dptr(idx2pnt.dptr);
+            builder.arg_u32(tile_shape.0);
+            builder.arg_u32(tile_shape.1);
+            builder.arg_u32(16u32);
+            unsafe {
+                builder.launch_kernel(
+                    fnc,
+                    del_cudarc_sys::LaunchConfig::for_num_elems(num_pnt as u32),
+                )
+            }
+            .unwrap();
         }
-        /*
-        let param = (
-            pnt2splat_dev.len(),
-            pnt2splat_dev,
-            &pnt2idx_dev,
-            &mut idx2tiledepth_dev,
-            &mut idx2pnt_dev,
-            tile_shape.0 as u32,
-            tile_shape.1 as u32,
-            16u32,
-        );
-        use cudarc::driver::LaunchAsync;
-        unsafe { count_splat_in_tile.launch(cfg, param) }?;
-         */
-        del_cudarc_safe::sort_by_key_u64::radix_sort_by_key_u64(
-            &dev,
-            &mut idx2tiledepth_dev,
-            &mut idx2pnt_dev,
+        del_cudarc_sys::sort_by_key_u64::radix_sort_by_key_u64(
+            stream,
+            &mut idx2tiledepth,
+            &mut idx2pnt,
         )?;
-        idx2pnt_dev
+        idx2pnt
     };
     Ok((tile2idx_dev, idx2pnt_dev))
 }
 
 pub fn pnt2splat3_to_pnt2splat2(
-    dev: &std::sync::Arc<cudarc::driver::CudaStream>,
-    pnt2splat3_dev: &cudarc::driver::CudaSlice<Splat3>,
-    pnt2splat2_dev: &mut cudarc::driver::CudaSlice<Splat2>,
-    transform_world2ndc_dev: &cudarc::driver::CudaSlice<f32>,
+    stream: cu::CUstream,
+    pnt2xyz: &CuVec<f32>,
+    pnt2pixxydepth: &CuVec<f32>,
+    pnt2pixrad: &CuVec<f32>,
+    transform_world2ndc: &CuVec<f32>,
     img_shape: (u32, u32),
     radius: f32,
 ) -> anyhow::Result<()> {
-    let cfg = cudarc::driver::LaunchConfig::for_num_elems(pnt2splat3_dev.len() as u32);
-    let xyzrgb_to_splat = del_cudarc_safe::get_or_load_func(
-        &dev.context(),
+    let func = del_cudarc_sys::cache_func::get_function_cached(
+        "del-splat::splat_sphere",
+        del_splat_cuda_kernels::get("splat_sphere").unwrap(),
         "splat3_to_splat2",
-        del_splat_cudarc_kernel::SPLAT_SPHERE,
-    )?;
+    )
+    .unwrap();
+    let num_pnt = pnt2xyz.n / 3;
     {
-        use cudarc::driver::PushKernelArg;
-        let mut builder = dev.launch_builder(&xyzrgb_to_splat);
-        let img_shape_0 = img_shape.0 as u32;
-        let img_shape_1 = img_shape.1 as u32;
-        let pnt2splat3_dev_len = pnt2splat3_dev.len() as u32;
-        builder.arg(&pnt2splat3_dev_len);
-        builder.arg(pnt2splat2_dev);
-        builder.arg(pnt2splat3_dev);
-        builder.arg(transform_world2ndc_dev);
-        builder.arg(&img_shape_0);
-        builder.arg(&img_shape_1);
-        builder.arg(&radius);
-        unsafe { builder.launch(cfg) }?;
+        let mut builder = del_cudarc_sys::Builder::new(stream);
+        let img_shape_0 = img_shape.0;
+        let img_shape_1 = img_shape.1;
+        builder.arg_u32(num_pnt as u32);
+        builder.arg_dptr(pnt2xyz.dptr);
+        builder.arg_dptr(pnt2pixxydepth.dptr);
+        builder.arg_dptr(pnt2pixrad.dptr);
+        builder.arg_dptr(transform_world2ndc.dptr);
+        builder.arg_u32(img_shape_0);
+        builder.arg_u32(img_shape_1);
+        builder.arg_f32(radius);
+        builder
+            .launch_kernel(
+                func,
+                del_cudarc_sys::LaunchConfig::for_num_elems(num_pnt as u32),
+            )
+            .unwrap();
     }
-    /*
-    let param = (
-        pnt2splat3_dev.len(),
-        pnt2splat2_dev,
-        pnt2splat3_dev,
-        transform_world2ndc_dev,
-        img_shape.0,
-        img_shape.1,
-        radius,
-    );
-    use cudarc::driver::LaunchAsync;
-    unsafe { xyzrgb_to_splat. launch(cfg, param) }?;
-     */
     Ok(())
 }
 
+/*
 pub fn splat(
     dev: &std::sync::Arc<cudarc::driver::CudaStream>,
     img_shape: (u32, u32),
@@ -221,7 +198,6 @@ pub fn splat(
         del_splat_cudarc_kernel::SPLAT_SPHERE,
     )?;
     {
-        use cudarc::driver::PushKernelArg;
         let mut builder = dev.launch_builder(&count_splat_in_tile);
         let img_shape_0 = img_shape.0 as u32;
         let img_shape_1 = img_shape.1 as u32;
@@ -239,20 +215,6 @@ pub fn splat(
         builder.arg(pnt2splat_dev);
         unsafe { builder.launch(cfg) }?;
     }
-    /*
-    let param = (
-        img_shape.0 as u32,
-        img_shape.1 as u32,
-        pix2rgb_dev,
-        tile_shape.0 as u32,
-        tile_shape.1 as u32,
-        tile_size as u32,
-        tile2idx_dev,
-        idx2pnt_dev,
-        pnt2splat_dev,
-    );
-    use cudarc::driver::LaunchAsync;
-    unsafe { count_splat_in_tile.launch(cfg, param) }?;
-     */
     Ok(())
 }
+ */

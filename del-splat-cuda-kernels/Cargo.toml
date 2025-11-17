@@ -1,0 +1,24 @@
+[package]
+name = "del-splat-cuda-kernels"
+description = "hogehoge"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+build = "build.rs"
+
+include = ["src/**", "cuda/**", "build.rs"]
+
+[dependencies]
+
+
+[build-dependencies]
+walkdir = "2.5.0"
+
+# for develop
+# del-geo-cpp-headers = {path="../../del-geo/del-geo-cpp-headers"}
+
+# for push
+del-geo-cpp-headers = {git = "https://github.com/nobuyuki83/del-geo.git"}
+
+# for deploy
+# del-geo-cpp-headers = "=0.1.33"

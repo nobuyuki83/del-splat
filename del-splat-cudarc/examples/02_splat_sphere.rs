@@ -1,28 +1,23 @@
-#[cfg(feature = "cuda")]
-use del_cudarc_safe::cudarc;
-#[cfg(feature = "cuda")]
-use del_splat_cudarc::splat_sphere::Splat2;
-#[cfg(feature = "cuda")]
-use del_splat_cudarc::splat_sphere::Splat3;
-
 use num_traits::AsPrimitive;
 
 #[cfg(feature = "cuda")]
 fn assert_tile2pnt(
-    pnt2splat: &[Splat2],
+    pnt2pixxydepth: &[f32],
+    pnt2pixrad: &[f32],
     tile_shape: (usize, usize),
     tile_size: usize,
     tile2idx: &[u32],
     idx2pnt_gpu: &[u32],
 ) {
+    let num_pnt = pnt2pixxydepth.len() / 3;
     let num_ind = {
         // debug tile2ind using cpu
         // let pnt2splat = dev.dtoh_sync_copy(&pnt2splat_dev)?;
         let num_tile = tile_shape.0 * tile_shape.1;
         let mut tile2idx_cpu = vec![0usize; num_tile + 1];
-        for i_vtx in 0..pnt2splat.len() {
-            let p0 = pnt2splat[i_vtx].pos_pix;
-            let rad = pnt2splat[i_vtx].rad_pix;
+        for i_vtx in 0..num_pnt {
+            let p0 = arrayref::array_ref![pnt2pixxydepth, i_vtx * 3, 2];
+            let rad = pnt2pixrad[i_vtx];
             let aabb2 = del_geo_core::aabb2::from_point(&p0, rad);
             let tiles = del_geo_core::aabb2::overlapping_tiles(&aabb2, tile_size, tile_shape);
             for &i_tile in tiles.iter() {
@@ -48,10 +43,10 @@ fn assert_tile2pnt(
         //let idx2pnt_gpu = dev.dtoh_sync_copy(&idx2pnt_dev)?;
         let mut idx2pnt_cpu = vec![0usize; num_ind as usize];
         let mut ind2tiledepth = Vec::<(usize, usize, f32)>::with_capacity(num_ind as usize);
-        for i_pnt in 0..pnt2splat.len() {
-            let pos_pix = pnt2splat[i_pnt].pos_pix;
-            let rad_pix = pnt2splat[i_pnt].rad_pix;
-            let depth = pnt2splat[i_pnt].ndc_z + 1f32;
+        for i_pnt in 0..num_pnt {
+            let pos_pix = arrayref::array_ref![pnt2pixxydepth, i_pnt * 3, 2];
+            let rad_pix = pnt2pixrad[i_pnt];
+            let depth = pnt2pixxydepth[i_pnt * 3 + 2] + 1f32;
             let aabb2 = del_geo_core::aabb2::from_point(&pos_pix, rad_pix);
             let tiles = del_geo_core::aabb2::overlapping_tiles(&aabb2, tile_size, tile_shape);
             for &i_tile in tiles.iter() {
@@ -82,10 +77,11 @@ fn assert_tile2pnt(
 
 #[cfg(feature = "cuda")]
 fn main() -> anyhow::Result<()> {
+    use del_cudarc_sys::cu;
     // let path = "/Users/nobuyuki/project/juice_box1.ply";
     let file_path = "asset/juice_box.ply";
-    let pnt2splat3 = del_msh_cpu::io_ply::read_xyzrgb::<_, Splat3>(file_path)?;
-    let aabb3 = del_msh_cpu::vtx2point::aabb3_from_points(&pnt2splat3);
+    let (pnt2xyz, pnt2rgb) = del_splat_cpu::io_ply::read_xyzrgb::<_>(file_path)?;
+    let aabb3 = del_msh_cpu::vtx2xyz::aabb3(&pnt2xyz, 0f32);
     let aabb3: [f32; 6] = aabb3.map(|v| v.as_());
     let img_shape = (2000usize + 1, 1200usize + 1);
     let transform_world2ndc = {
@@ -109,141 +105,150 @@ fn main() -> anyhow::Result<()> {
         del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
     let radius = 0.0015f32;
-
-    let ctx = cudarc::driver::CudaContext::new(0)?;
-    let dev = ctx.default_stream();
     //
-    let pnt2xyzrgb_dev = dev.memcpy_stod(&pnt2splat3)?;
-    let mut pnt2splat_dev = {
-        let pnt2splat = vec![Splat2::default(); pnt2splat3.len()];
-        dev.memcpy_stod(&pnt2splat)?
-    };
-    let transform_world2ndc_dev = dev.memcpy_stod(&transform_world2ndc)?;
-    del_splat_cudarc::splat_sphere::pnt2splat3_to_pnt2splat2(
-        &dev,
-        &pnt2xyzrgb_dev,
-        &mut pnt2splat_dev,
-        &transform_world2ndc_dev,
-        (img_shape.0 as u32, img_shape.1 as u32),
-        radius,
-    )?;
+    del_cudarc_sys::cache_func::clear();
+    let (dev, _ctx) = del_cudarc_sys::init_cuda_and_make_context(0).unwrap();
     {
-        // draw pixels in cpu using the order computed in cpu
-        let pnt2splat = dev.memcpy_dtov(&pnt2splat_dev)?;
-        let idx2vtx = {
-            let mut idx2vtx: Vec<usize> = (0..pnt2splat.len()).collect();
-            idx2vtx.sort_by(|&idx0, &idx1| {
-                pnt2splat[idx0]
-                    .ndc_z
-                    .partial_cmp(&pnt2splat[idx1].ndc_z)
-                    .unwrap()
-            });
-            idx2vtx
-        };
-        let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
-        del_canvas::rasterize::aabb3::wireframe_dda(
-            &mut img_data,
-            img_shape,
-            &transform_world2ndc,
-            &aabb3,
-            [1.0, 1.0, 1.0],
-        );
-        for i_idx in 0..pnt2splat3.len() {
-            let i_vtx = idx2vtx[i_idx];
-            let pos_pix = pnt2splat[i_vtx].pos_pix;
-            let ix = pos_pix[0] as usize;
-            let iy = pos_pix[1] as usize;
-            let ipix = iy * img_shape.0 + ix;
-            img_data[ipix][0] = (pnt2splat3[i_vtx].rgb[0] as f32) / 255.0;
-            img_data[ipix][1] = (pnt2splat3[i_vtx].rgb[1] as f32) / 255.0;
-            img_data[ipix][2] = (pnt2splat3[i_vtx].rgb[2] as f32) / 255.0;
-        }
-        use ::slice_of_array::SliceFlatExt; // for flat
-        del_canvas::write_png_from_float_image_rgb(
-            "target/del_canvas_cuda__02_splat_sphere__pix.png",
-            &img_shape,
-            (&img_data).flat(),
-        )?;
-    } // end pixel
-      // ---------------------------------------------------------
-      // draw circles with tiles
-    const TILE_SIZE: usize = 16;
-    let tile_shape = (
-        img_shape.0 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
-        img_shape.1 / TILE_SIZE + if img_shape.1 % TILE_SIZE == 0 { 0 } else { 1 },
-    );
-    let now = std::time::Instant::now();
-    let (tile2idx_dev, idx2pnt_dev) = del_splat_cudarc::splat_sphere::tile2idx_idx2pnt(
-        &dev,
-        (tile_shape.0 as u32, tile_shape.1 as u32),
-        &pnt2splat_dev,
-    )?;
-    println!("tile2idx_idx2pnt: {:.2?}", now.elapsed());
-    assert_tile2pnt(
-        &(dev.memcpy_dtov(&pnt2splat_dev)?),
-        tile_shape,
-        TILE_SIZE,
-        &dev.memcpy_dtov(&tile2idx_dev)?,
-        &dev.memcpy_dtov(&idx2pnt_dev)?,
-    );
-    // --------------------------------------------------------
-    {
-        let mut pix2rgb_dev = dev.alloc_zeros::<f32>(img_shape.0 * img_shape.1 * 3)?;
-        let now = std::time::Instant::now();
-        del_splat_cudarc::splat_sphere::splat(
-            &dev,
+        let stream = del_cudarc_sys::create_stream_in_current_context().unwrap();
+        //
+        let num_pnt = pnt2xyz.len() / 3;
+        use del_cudarc_sys::CuVec;
+        let pnt2xyz_dev = CuVec::<f32>::from_slice(&pnt2xyz).unwrap();
+        let pnt2rgb_dev = CuVec::<f32>::from_slice(&pnt2rgb).unwrap();
+        let pnt2pixxydepth_dev = CuVec::<f32>::with_capacity(num_pnt * 3).unwrap();
+        let pnt2pixrad_dev = CuVec::<f32>::with_capacity(num_pnt).unwrap();
+        let transform_world2ndc_dev = CuVec::from_slice(&transform_world2ndc).unwrap();
+        del_splat_cudarc::splat_sphere::pnt2splat3_to_pnt2splat2(
+            stream,
+            &pnt2xyz_dev,
+            &pnt2pixxydepth_dev,
+            &pnt2pixrad_dev,
+            &transform_world2ndc_dev,
             (img_shape.0 as u32, img_shape.1 as u32),
-            &mut pix2rgb_dev,
-            &pnt2splat_dev,
-            TILE_SIZE as u32,
-            &tile2idx_dev,
-            &idx2pnt_dev,
+            radius,
         )?;
-        println!("splat: {:.2?}", now.elapsed());
-        let pix2rgb = dev.memcpy_dtov(&pix2rgb_dev)?;
-        del_canvas::write_png_from_float_image_rgb(
-            "target/del_canvas_cuda__02_splat_sphere__all_gpu.png",
-            &img_shape,
-            &pix2rgb,
-        )?;
-    }
-    {
-        // assert using cpu
-        let idx2pnt = dev.memcpy_dtov(&idx2pnt_dev)?;
-        let pnt2splat = dev.memcpy_dtov(&pnt2splat_dev)?;
-        let tile2idx = dev.memcpy_dtov(&tile2idx_dev)?;
-        let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
-        del_canvas::rasterize::aabb3::wireframe_dda(
-            &mut img_data,
-            img_shape,
-            &transform_world2ndc,
-            &aabb3,
-            [1.0, 1.0, 1.0],
-        );
-        for (iw, ih) in itertools::iproduct!(0..img_shape.0, 0..img_shape.1) {
-            let i_tile = (ih / TILE_SIZE) * tile_shape.0 + (iw / TILE_SIZE);
-            let i_pix = ih * img_shape.0 + iw;
-            for &i_vtx in &idx2pnt[tile2idx[i_tile] as usize..tile2idx[i_tile + 1] as usize] {
-                let i_vtx = i_vtx as usize;
-                let p0 = pnt2splat[i_vtx].pos_pix;
-                let rad = pnt2splat[i_vtx].rad_pix;
-                let p1 = [iw as f32 + 0.5f32, ih as f32 + 0.5f32];
-                if del_geo_core::edge2::length(&p0, &p1) > rad {
-                    continue;
-                }
-                img_data[i_pix][0] = (pnt2splat3[i_vtx].rgb[0] as f32) / 255.0;
-                img_data[i_pix][1] = (pnt2splat3[i_vtx].rgb[1] as f32) / 255.0;
-                img_data[i_pix][2] = (pnt2splat3[i_vtx].rgb[2] as f32) / 255.0;
+        {
+            // draw pixels in cpu using the order computed in cpu
+            let pnt2pixxydepth = pnt2pixxydepth_dev.copy_to_host().unwrap();
+            let idx2vtx = {
+                let mut idx2vtx: Vec<usize> = (0..num_pnt).collect();
+                idx2vtx.sort_by(|&idx0, &idx1| {
+                    pnt2pixxydepth[idx0 * 3 + 2]
+                        .partial_cmp(&pnt2pixxydepth[idx1 * 3 + 2])
+                        .unwrap()
+                });
+                idx2vtx
+            };
+            let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
+            del_canvas::rasterize::aabb3::wireframe_dda(
+                &mut img_data,
+                img_shape,
+                &transform_world2ndc,
+                &aabb3,
+                [1.0, 1.0, 1.0],
+            );
+            for i_idx in 0..num_pnt {
+                let i_vtx = idx2vtx[i_idx];
+                let pixxydepth = arrayref::array_ref![pnt2pixxydepth, i_vtx * 3, 3];
+                let ix = pixxydepth[0] as usize;
+                let iy = pixxydepth[1] as usize;
+                let ipix = iy * img_shape.0 + ix;
+                img_data[ipix][0] = pnt2rgb[i_vtx * 3 + 0];
+                img_data[ipix][1] = pnt2rgb[i_vtx * 3 + 1];
+                img_data[ipix][2] = pnt2rgb[i_vtx * 3 + 2];
             }
-        }
-        use ::slice_of_array::SliceFlatExt; // for flat
-        del_canvas::write_png_from_float_image_rgb(
-            "target/del_canvas_cuda__02_splat_sphere__tile_cpu.png",
-            &img_shape,
-            (&img_data).flat(),
+            use ::slice_of_array::SliceFlatExt; // for flat
+            del_canvas::write_png_from_float_image_rgb(
+                "target/del_canvas_cuda__02_splat_sphere__pix.png",
+                &img_shape,
+                (&img_data).flat(),
+            )?;
+        } // end pixel
+          // ---------------------------------------------------------
+          // draw circles with tiles
+        const TILE_SIZE: usize = 16;
+        let tile_shape = (
+            img_shape.0 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
+            img_shape.1 / TILE_SIZE + if img_shape.1 % TILE_SIZE == 0 { 0 } else { 1 },
+        );
+        let now = std::time::Instant::now();
+        let (tile2idx_dev, idx2pnt_dev) = del_splat_cudarc::splat_sphere::tile2idx_idx2pnt(
+            stream,
+            (tile_shape.0 as u32, tile_shape.1 as u32),
+            &pnt2pixxydepth_dev,
+            &pnt2pixrad_dev,
         )?;
+        println!("tile2idx_idx2pnt: {:.2?}", now.elapsed());
+        assert_tile2pnt(
+            &pnt2pixxydepth_dev.copy_to_host().unwrap(),
+            &pnt2pixrad_dev.copy_to_host().unwrap(),
+            tile_shape,
+            TILE_SIZE,
+            &tile2idx_dev.copy_to_host().unwrap(),
+            &idx2pnt_dev.copy_to_host().unwrap(),
+        );
+        /*
+        // --------------------------------------------------------
+        {
+            let mut pix2rgb_dev = dev.alloc_zeros::<f32>(img_shape.0 * img_shape.1 * 3)?;
+            let now = std::time::Instant::now();
+            del_splat_cudarc::splat_sphere::splat(
+                &dev,
+                (img_shape.0 as u32, img_shape.1 as u32),
+                &mut pix2rgb_dev,
+                &pnt2splat_dev,
+                TILE_SIZE as u32,
+                &tile2idx_dev,
+                &idx2pnt_dev,
+            )?;
+            println!("splat: {:.2?}", now.elapsed());
+            let pix2rgb = dev.memcpy_dtov(&pix2rgb_dev)?;
+            del_canvas::write_png_from_float_image_rgb(
+                "target/del_canvas_cuda__02_splat_sphere__all_gpu.png",
+                &img_shape,
+                &pix2rgb,
+            )?;
+        }
+        {
+            // assert using cpu
+            let idx2pnt = dev.memcpy_dtov(&idx2pnt_dev)?;
+            let pnt2splat = dev.memcpy_dtov(&pnt2splat_dev)?;
+            let tile2idx = dev.memcpy_dtov(&tile2idx_dev)?;
+            let mut img_data = vec![[0f32, 0f32, 0f32]; img_shape.0 * img_shape.1];
+            del_canvas::rasterize::aabb3::wireframe_dda(
+                &mut img_data,
+                img_shape,
+                &transform_world2ndc,
+                &aabb3,
+                [1.0, 1.0, 1.0],
+            );
+            for (iw, ih) in itertools::iproduct!(0..img_shape.0, 0..img_shape.1) {
+                let i_tile = (ih / TILE_SIZE) * tile_shape.0 + (iw / TILE_SIZE);
+                let i_pix = ih * img_shape.0 + iw;
+                for &i_vtx in &idx2pnt[tile2idx[i_tile] as usize..tile2idx[i_tile + 1] as usize] {
+                    let i_vtx = i_vtx as usize;
+                    let p0 = pnt2splat[i_vtx].pos_pix;
+                    let rad = pnt2splat[i_vtx].rad_pix;
+                    let p1 = [iw as f32 + 0.5f32, ih as f32 + 0.5f32];
+                    if del_geo_core::edge2::length(&p0, &p1) > rad {
+                        continue;
+                    }
+                    img_data[i_pix][0] = (pnt2splat3[i_vtx].rgb[0] as f32) / 255.0;
+                    img_data[i_pix][1] = (pnt2splat3[i_vtx].rgb[1] as f32) / 255.0;
+                    img_data[i_pix][2] = (pnt2splat3[i_vtx].rgb[2] as f32) / 255.0;
+                }
+            }
+            use ::slice_of_array::SliceFlatExt; // for flat
+            del_canvas::write_png_from_float_image_rgb(
+                "target/del_canvas_cuda__02_splat_sphere__tile_cpu.png",
+                &img_shape,
+                (&img_data).flat(),
+            )?;
+        }
+         */
+        del_cudarc_sys::cuda_check!(del_cudarc_sys::cu::cuStreamDestroy_v2(stream)).unwrap();
     }
-
+    del_cudarc_sys::cuda_check!(del_cudarc_sys::cu::cuDevicePrimaryCtxRelease_v2(dev)).unwrap();
     Ok(())
 }
 
