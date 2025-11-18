@@ -28,8 +28,12 @@ struct Splat2 {
 __global__
 void splat3_to_splat2(
   uint32_t num_pnt,
-  Splat2* pnt2splat2,
-  const Splat3 *pnt2splat3,
+  float* pnt2pixxydepth,
+  float* pnt2pixconvinv,
+  float* pnt2pixaabb,
+  const float* pnt2xyz,
+  const float* pnt2quat,
+  const float* pnt2scale,
   const float *transform_world2ndc,
   const uint32_t img_w,
   const uint32_t img_h)
@@ -37,37 +41,33 @@ void splat3_to_splat2(
     int i_pnt = blockDim.x * blockIdx.x + threadIdx.x;
     if( i_pnt >= num_pnt ){ return; }
     //
-    const auto pos_world = pnt2splat3[i_pnt].xyz;
-    const cuda::std::array<float,9> world2ndc = mat4_col_major::jacobian_transform(transform_world2ndc, pos_world);
+    const float* xyz = pnt2xyz + i_pnt * 3;
+    const cuda::std::array<float,9> world2ndc = mat4_col_major::jacobian_transform(transform_world2ndc, xyz);
     const cuda::std::array<float,6> ndc2pix = mat2x3_col_major::transform_ndc2pix(img_w, img_h);
     const cuda::std::array<float,6> world2pix = mat2x3_col_major::mult_mat3_col_major(ndc2pix.data(), world2ndc.data());
     const auto pos_ndc = mat4_col_major::transform_homogeneous(
-        transform_world2ndc, pos_world);
+        transform_world2ndc, xyz);
     const float pos_scrn[3] = {pos_ndc[0], pos_ndc[1], 1.f};
-    const auto pos_pix = mat2x3_col_major::mult_vec3(ndc2pix.data(), pos_scrn);
-    const cuda::std::array<float,3> sig = mat2_sym::projected_spd_mat3(
+    const auto pixxy = mat2x3_col_major::mult_vec3(ndc2pix.data(), pos_scrn);
+    const cuda::std::array<float,3> pixconv = mat2_sym::projected_spd_mat3(
         world2pix.data(),
-        pnt2splat3[i_pnt].quaternion,
-        pnt2splat3[i_pnt].scale);
-    const cuda::std::array<float,3> sig_inv = mat2_sym::safe_inverse_preserve_positive_definiteness(sig.data(), 1.0e-5f);
-    const cuda::std::array<float,4> _aabb0 = mat2_sym::aabb2(sig_inv.data());
+        pnt2quat + i_pnt * 4,
+        pnt2scale + i_pnt * 3);
+    const cuda::std::array<float,3> pixconvinv = mat2_sym::safe_inverse_preserve_positive_definiteness(pixconv.data(), 1.0e-5f);
+    const cuda::std::array<float,4> _aabb0 = mat2_sym::aabb2(pixconvinv.data());
     const cuda::std::array<float,4> _aabb1 = aabb2::scale(_aabb0.data(), 3.f);
-    const cuda::std::array<float,4> aabb = aabb2::translate(_aabb1.data(), pos_pix.data());
+    const cuda::std::array<float,4> pixaabb = aabb2::translate(_aabb1.data(), pixxy.data());
     //
-    pnt2splat2[i_pnt].ndc_z = pos_ndc[2];
-    pnt2splat2[i_pnt].pos_pix[0] = pos_pix[0];
-    pnt2splat2[i_pnt].pos_pix[1] = pos_pix[1];
-    pnt2splat2[i_pnt].sig_inv[0] = sig_inv[0];
-    pnt2splat2[i_pnt].sig_inv[1] = sig_inv[1];
-    pnt2splat2[i_pnt].sig_inv[2] = sig_inv[2];
-    pnt2splat2[i_pnt].aabb[0] = aabb[0];
-    pnt2splat2[i_pnt].aabb[1] = aabb[1];
-    pnt2splat2[i_pnt].aabb[2] = aabb[2];
-    pnt2splat2[i_pnt].aabb[3] = aabb[3];
-    pnt2splat2[i_pnt].alpha = pnt2splat3[i_pnt].opacity;
-    pnt2splat2[i_pnt].rgb[0] = pnt2splat3[i_pnt].rgb_dc[0];
-    pnt2splat2[i_pnt].rgb[1] = pnt2splat3[i_pnt].rgb_dc[1];
-    pnt2splat2[i_pnt].rgb[2] = pnt2splat3[i_pnt].rgb_dc[2];
+    pnt2pixxydepth[i_pnt*3+0] = pixxy[0];
+    pnt2pixxydepth[i_pnt*3+1] = pixxy[1];
+    pnt2pixxydepth[i_pnt*3+2] = pos_ndc[2];
+    pnt2pixconvinv[i_pnt*3+0] = pixconvinv[0];
+    pnt2pixconvinv[i_pnt*3+1] = pixconvinv[1];
+    pnt2pixconvinv[i_pnt*3+2] = pixconvinv[2];
+    pnt2pixaabb[i_pnt*4+0] = pixaabb[0];
+    pnt2pixaabb[i_pnt*4+1] = pixaabb[1];
+    pnt2pixaabb[i_pnt*4+2] = pixaabb[2];
+    pnt2pixaabb[i_pnt*4+3] = pixaabb[3];
 }
 
 
@@ -81,14 +81,18 @@ void rasterize_splat_using_tile(
     uint32_t tile_size,
     const uint32_t* d_tile2idx,
     const uint32_t* d_idx2pnt,
-    const Splat2* d_pnt2splat)
+    const float* pnt2pixxydepth,
+    const float* pnt2pixrad,
+    const float* pnt2pixaabb,
+    const float* pnt2pixconvinv,
+    const float* pnt2oppacity,
+    const float* pnt2rgb)
 {
     const uint32_t ix = blockDim.x * blockIdx.x + threadIdx.x;
     if( ix >= img_w ){ return; }
     //
     const uint32_t iy = blockDim.y * blockIdx.y + threadIdx.y;
     if( iy >= img_h ){ return; }
-    // const uint32_t i_pix = iy * img_w + ix;
     //
     const uint32_t i_tile = (iy / tile_size) * tile_w + (ix / tile_size);
     const float t[2] = {float(ix) + 0.5f, float(iy) + 0.5f};
@@ -99,18 +103,22 @@ void rasterize_splat_using_tile(
     for (uint32_t iidx=0;iidx<num_pnt;++iidx) {
         uint32_t idx = d_tile2idx[i_tile] + num_pnt - 1 - iidx;
         const uint32_t i_pnt = d_idx2pnt[idx];
-        const Splat2& pnt2 = d_pnt2splat[i_pnt];
+        const float* pixxy = pnt2pixxydepth + i_pnt * 3;
+        const float* pixaabb = pnt2pixaabb + i_pnt * 4;
+        const float* pixconvinv = pnt2pixconvinv + i_pnt * 3;
+        const float oppacity = pnt2oppacity[i_pnt];
+        const float* rgb = pnt2rgb + i_pnt * 3;
         // front to back
-        if( !aabb2::is_inlcude_point(pnt2.aabb, t) ){
+        if( !aabb2::is_inlcude_point(pixaabb, t) ){
             continue;
         }
-        const float t0[2] = {t[0] - pnt2.pos_pix[0], t[1] - pnt2.pos_pix[1]};
-        float _e = mat2_sym::mult_vec_from_both_sides(pnt2.sig_inv, t0, t0);
-        float e = expf(-0.5 * _e) * pnt2.alpha;
+        const float t0[2] = {t[0] - pixxy[0], t[1] - pixxy[1]};
+        float _e = mat2_sym::mult_vec_from_both_sides(pixconvinv, t0, t0);
+        float e = expf(-0.5 * _e) * oppacity;
         float e_out = alpha_occu * e;
-        d_pix2rgb[(iy * img_w + ix) * 3 + 0] += pnt2.rgb[0] * e_out;
-        d_pix2rgb[(iy * img_w + ix) * 3 + 1] += pnt2.rgb[1] * e_out;
-        d_pix2rgb[(iy * img_w + ix) * 3 + 2] += pnt2.rgb[2] * e_out;
+        d_pix2rgb[(iy * img_w + ix) * 3 + 0] += rgb[0] * e_out;
+        d_pix2rgb[(iy * img_w + ix) * 3 + 1] += rgb[1] * e_out;
+        d_pix2rgb[(iy * img_w + ix) * 3 + 2] += rgb[2] * e_out;
         alpha_occu *= 1.f - e;
         alpha_sum += e_out;
         if( alpha_sum > 0.999 ){

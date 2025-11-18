@@ -1,41 +1,4 @@
-//use cudarc::driver::DeviceSlice;
-use del_cudarc_sys::cu::CUstream;
-use del_cudarc_sys::{cu, CuVec};
-/*
-#[derive(Clone, Default)]
-#[repr(C)]
-pub struct Splat3 {
-    pub xyz: [f32; 3],
-    pub rgb: [u8; 3],
-}
-
-impl del_msh_cpu::io_ply::XyzRgb for Splat3 {
-    fn new(xyz: [f64; 3], rgb: [u8; 3]) -> Self {
-        Splat3 {
-            xyz: xyz.map(|v| v as f32),
-            rgb,
-        }
-    }
-}
-
-impl del_msh_cpu::vtx2point::HasXyz<f32> for Splat3 {
-    fn xyz(&self) -> &[f32; 3] {
-        &self.xyz
-    }
-}
-unsafe impl cudarc::driver::DeviceRepr for Splat3 {}
-
-#[derive(Clone, Default, Debug)]
-#[repr(C)]
-pub struct Splat2 {
-    pub ndc_z: f32,
-    pub pos_pix: [f32; 2],
-    pub rad_pix: f32,
-    pub rgb: [f32; 3],
-}
-
-unsafe impl cudarc::driver::DeviceRepr for Splat2 {}
- */
+use del_cudarc_sys::{cu, cu::CUstream, CuVec};
 
 pub fn tile2idx_idx2pnt(
     stream: CUstream,
@@ -170,51 +133,47 @@ pub fn pnt2splat3_to_pnt2splat2(
     Ok(())
 }
 
-/*
 pub fn splat(
-    dev: &std::sync::Arc<cudarc::driver::CudaStream>,
+    stream: CUstream,
     img_shape: (u32, u32),
-    pix2rgb_dev: &mut cudarc::driver::CudaSlice<f32>,
-    pnt2splat_dev: &cudarc::driver::CudaSlice<Splat2>,
+    pix2rgb_dev: &CuVec<f32>,
+    pnt2pixxydepth_dev: &CuVec<f32>,
+    pnt2pixrad_dev: &CuVec<f32>,
+    pnt2rgb: &CuVec<f32>,
     tile_size: u32,
-    tile2idx_dev: &cudarc::driver::CudaSlice<u32>,
-    idx2pnt_dev: &cudarc::driver::CudaSlice<u32>,
+    tile2idx_dev: &CuVec<u32>,
+    idx2pnt_dev: &CuVec<u32>,
 ) -> anyhow::Result<()> {
     let tile_shape = (
         img_shape.0 / tile_size + if img_shape.0 % tile_size == 0 { 0 } else { 1 },
         img_shape.1 / tile_size + if img_shape.1 % tile_size == 0 { 0 } else { 1 },
     );
     // gpu splat
-    let cfg = {
-        cudarc::driver::LaunchConfig {
-            grid_dim: (tile_shape.0 as u32, tile_shape.1 as u32, 1),
-            block_dim: (tile_size as u32, tile_size as u32, 1),
-            shared_mem_bytes: 0,
-        }
+    let cfg = del_cudarc_sys::LaunchConfig {
+        grid_dim: (tile_shape.0 as u32, tile_shape.1 as u32, 1),
+        block_dim: (tile_size as u32, tile_size as u32, 1),
+        shared_mem_bytes: 0,
     };
-    let count_splat_in_tile = del_cudarc_safe::get_or_load_func(
-        &dev.context(),
+    let fnc = del_cudarc_sys::cache_func::get_function_cached(
+        "del-splat::splat_sphere",
+        del_splat_cuda_kernels::get("splat_sphere").unwrap(),
         "rasterize_splat_using_tile",
-        del_splat_cudarc_kernel::SPLAT_SPHERE,
-    )?;
+    )
+    .unwrap();
     {
-        let mut builder = dev.launch_builder(&count_splat_in_tile);
-        let img_shape_0 = img_shape.0 as u32;
-        let img_shape_1 = img_shape.1 as u32;
-        builder.arg(&img_shape_0);
-        builder.arg(&img_shape_1);
-        builder.arg(pix2rgb_dev);
-        let tile_shape_0 = tile_shape.0 as u32;
-        let tile_shape_1 = tile_shape.1 as u32;
-        builder.arg(&tile_shape_0);
-        builder.arg(&tile_shape_1);
-        let tile_size = tile_size as u32;
-        builder.arg(&tile_size);
-        builder.arg(tile2idx_dev);
-        builder.arg(idx2pnt_dev);
-        builder.arg(pnt2splat_dev);
-        unsafe { builder.launch(cfg) }?;
+        let mut builder = del_cudarc_sys::Builder::new(stream);
+        builder.arg_u32(img_shape.0);
+        builder.arg_u32(img_shape.1);
+        builder.arg_dptr(pix2rgb_dev.dptr);
+        builder.arg_u32(tile_shape.0);
+        builder.arg_u32(tile_shape.1);
+        builder.arg_u32(tile_size);
+        builder.arg_dptr(tile2idx_dev.dptr);
+        builder.arg_dptr(idx2pnt_dev.dptr);
+        builder.arg_dptr(pnt2pixxydepth_dev.dptr);
+        builder.arg_dptr(pnt2pixrad_dev.dptr);
+        builder.arg_dptr(pnt2rgb.dptr);
+        builder.launch_kernel(fnc, cfg).unwrap();
     }
     Ok(())
 }
- */

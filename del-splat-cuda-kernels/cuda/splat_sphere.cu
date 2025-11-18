@@ -113,7 +113,9 @@ void rasterize_splat_using_tile(
     uint32_t tile_size,
     const uint32_t* d_tile2idx,
     const uint32_t* d_idx2pnt,
-    const Splat2* d_pnt2splat)
+    const float* pnt2pixxydepth,
+    const float* pnt2pixrad,
+    const float* d_pnt2rgb)
 {
     const uint32_t ix = blockDim.x * blockIdx.x + threadIdx.x;
     if( ix >= img_w ){ return; }
@@ -125,17 +127,19 @@ void rasterize_splat_using_tile(
     const uint32_t i_tile = (iy / tile_size) * tile_w + (ix / tile_size);
     for(uint32_t idx=d_tile2idx[i_tile]; idx<d_tile2idx[i_tile+1];++idx){
         const uint32_t i_pnt = d_idx2pnt[idx];
-        const Splat2& splat = d_pnt2splat[i_pnt];
+        const float* pixxy = pnt2pixxydepth + i_pnt * 3;
+        const float pixrad = pnt2pixrad[i_pnt];
+        const float* rgb = d_pnt2rgb + i_pnt * 3;
         const float p0[2] = {
             float(ix) + 0.5f,
             float(iy) + 0.5f};
-        const float dx = splat.pos_pix[0] - p0[0];
-        const float dy = splat.pos_pix[1] - p0[1];
+        const float dx = pixxy[0] - p0[0];
+        const float dy = pixxy[1] - p0[1];
         const float distance = sqrt(dx * dx + dy * dy);
-        if( distance > splat.rad ){ continue; }
-        d_pix2rgb[i_pix*3+0] = splat.rgb[0];
-        d_pix2rgb[i_pix*3+1] = splat.rgb[1];
-        d_pix2rgb[i_pix*3+2] = splat.rgb[2];
+        if( distance > pixrad ){ continue; }
+        d_pix2rgb[i_pix*3+0] = rgb[0];
+        d_pix2rgb[i_pix*3+1] = rgb[1];
+        d_pix2rgb[i_pix*3+2] = rgb[2];
     }
 
 }

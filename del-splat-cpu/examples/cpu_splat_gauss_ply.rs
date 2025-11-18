@@ -19,7 +19,7 @@ fn main() -> anyhow::Result<()> {
         let aabb3 = del_msh_cpu::vtx2xyz::aabb3(&pnt2xyz, 0f32);
         let longest_edge = del_geo_core::aabb3::max_edge_size(&aabb3);
         let scale = 1.0 / longest_edge;
-        let scale_sqrt = scale * scale;
+        let sqr_scale = scale * scale;
         let center = del_geo_core::aabb3::center(&aabb3);
         let num_pnt = pnt2xyz.len() / 3;
         for i_pnt in 0..num_pnt {
@@ -29,9 +29,9 @@ fn main() -> anyhow::Result<()> {
             pnt2xyz[i_pnt * 3 + 0] *= scale;
             pnt2xyz[i_pnt * 3 + 1] *= scale;
             pnt2xyz[i_pnt * 3 + 2] *= scale;
-            pnt2scale[i_pnt * 3 + 0] *= scale_sqrt;
-            pnt2scale[i_pnt * 3 + 1] *= scale_sqrt;
-            pnt2scale[i_pnt * 3 + 2] *= scale_sqrt;
+            pnt2scale[i_pnt * 3 + 0] *= sqr_scale;
+            pnt2scale[i_pnt * 3 + 1] *= sqr_scale;
+            pnt2scale[i_pnt * 3 + 2] *= sqr_scale;
         }
         (pnt2xyz, pnt2rgb, pnt2op, pnt2scale, pnt2quat)
     };

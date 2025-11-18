@@ -1,130 +1,49 @@
-//use cudarc::driver::DeviceSlice;
-//use del_cudarc_safe::cudarc;
-//use del_cudarc_safe::cudarc::driver::PushKernelArg;
-
-/*
-#[derive(Clone, Debug)]
-#[repr(C)]
-pub struct Splat3 {
-    pub xyz: [f32; 3],
-    // nrm: [f32; 3],
-    pub rgb_dc: [f32; 3],
-    pub rgb_sh: [f32; 45],
-    pub opacity: f32,
-    pub scale: [f32; 3],
-    pub quaternion: [f32; 4],
-}
-
-impl del_msh_cpu::io_ply::GaussSplat3D for Splat3 {
-    fn new(
-        xyz: [f32; 3],
-        rgb_dc: [f32; 3],
-        rgb_sh: [f32; 45],
-        opacity: f32,
-        scale: [f32; 3],
-        quaternion: [f32; 4],
-    ) -> Self {
-        Splat3 {
-            xyz,
-            rgb_dc,
-            rgb_sh,
-            opacity,
-            scale,
-            quaternion,
-        }
-    }
-}
-
-impl del_msh_cpu::vtx2point::HasXyz<f32> for Splat3 {
-    fn xyz(&self) -> &[f32; 3] {
-        &self.xyz
-    }
-}
-
-unsafe impl cudarc::driver::DeviceRepr for Splat3 {}
- */
-
-// above: trait implementation for GSplat3
-// ----------------------------
-
-/*
-#[derive(Clone, Default)]
-#[repr(C)]
-pub struct Splat2 {
-    pub pos_pix: [f32; 2],
-    pub sig_inv: [f32; 3],
-    pub aabb: [f32; 4],
-    pub rgb: [f32; 3],
-    pub alpha: f32,
-    pub ndc_z: f32,
-}
-
-unsafe impl cudarc::driver::DeviceRepr for Splat2 {}
-
-impl del_splat_core::splat_gaussian2::Splat2 for Splat2 {
-    fn ndc_z(&self) -> f32 {
-        self.ndc_z
-    }
-    fn aabb(&self) -> &[f32; 4] {
-        &self.aabb
-    }
-    fn property(&self) -> (&[f32; 2], &[f32; 3], &[f32; 3], f32) {
-        (&self.pos_pix, &self.sig_inv, &self.rgb, self.alpha)
-    }
-}
- */
-
-/*
-impl del_canvas_cpu::tile_acceleration::Splat2 for Splat2{
-    fn aabb(&self) -> [f32; 4] { self.aabb }
-    fn ndc_z(&self) -> f32 { self.ndc_z }
-}
- */
-
 // ---------------------------------
 // below: global funcs
 
+use del_cudarc_sys::{cu::CUstream, CuVec};
+
 pub fn pnt2splat3_to_pnt2splat2(
-    dev: &std::sync::Arc<cudarc::driver::CudaStream>,
-    pnt2gs3_dev: &cudarc::driver::CudaSlice<Splat3>,
-    pnt2gs2_dev: &mut cudarc::driver::CudaSlice<Splat2>,
-    transform_world2ndc_dev: &cudarc::driver::CudaSlice<f32>,
+    stream: CUstream,
+    pnt2xyz: &CuVec<f32>,
+    pnt2scale: &CuVec<f32>,
+    pnt2quat: &CuVec<f32>,
+    pnt2pixxydepth: &CuVec<f32>,
+    pnt2pixconvinv: &CuVec<f32>,
+    pnt2pixaabb: &CuVec<f32>,
+    transform_world2ndc: &CuVec<f32>,
     img_shape: (u32, u32),
 ) -> anyhow::Result<()> {
-    let cfg = cudarc::driver::LaunchConfig::for_num_elems(pnt2gs3_dev.len() as u32);
-    let splat3_to_splat2 = del_cudarc_safe::get_or_load_func(
-        &dev.context(),
+    let num_pnt = pnt2xyz.n / 3;
+    let fnc = del_cudarc_sys::cache_func::get_function_cached(
+        "del_splat::splat_gauss",
+        del_splat_cuda_kernels::get("splat_gauss").unwrap(),
         "splat3_to_splat2",
-        del_splat_cudarc_kernel::SPLAT_GAUSS,
-    )?;
+    )
+    .unwrap();
     {
-        let mut builder = dev.launch_builder(&splat3_to_splat2);
-        let pnt2gs3_dev_len = pnt2gs3_dev.len() as u32;
-        let img_shape_0 = img_shape.0 as u32;
-        let img_shape_1 = img_shape.1 as u32;
-        builder.arg(&pnt2gs3_dev_len);
-        builder.arg(pnt2gs2_dev);
-        builder.arg(pnt2gs3_dev);
-        builder.arg(transform_world2ndc_dev);
-        builder.arg(&img_shape_0);
-        builder.arg(&img_shape_1);
-        unsafe { builder.launch(cfg) }?;
+        let mut builder = del_cudarc_sys::Builder::new(stream);
+        builder.arg_u32(num_pnt as u32);
+        builder.arg_dptr(pnt2pixxydepth.dptr);
+        builder.arg_dptr(pnt2pixconvinv.dptr);
+        builder.arg_dptr(pnt2pixaabb.dptr);
+        builder.arg_dptr(pnt2xyz.dptr);
+        builder.arg_dptr(pnt2quat.dptr);
+        builder.arg_dptr(pnt2scale.dptr);
+        builder.arg_dptr(transform_world2ndc.dptr);
+        builder.arg_u32(img_shape.0);
+        builder.arg_u32(img_shape.1);
+        builder
+            .launch_kernel(
+                fnc,
+                del_cudarc_sys::LaunchConfig::for_num_elems(num_pnt as u32),
+            )
+            .unwrap();
     }
-    /*
-    let param = (
-        pnt2gs3_dev.len(),
-        pnt2gs2_dev,
-        pnt2gs3_dev,
-        transform_world2ndc_dev,
-        img_shape.0,
-        img_shape.1,
-    );
-    use cudarc::driver::LaunchAsync;
-    unsafe { splat3_to_splat2.launch(cfg, param) }?;
-     */
     Ok(())
 }
 
+/*
 pub fn rasterize_pnt2splat2(
     dev: &std::sync::Arc<cudarc::driver::CudaStream>,
     img_shape: (u32, u32),
@@ -310,3 +229,4 @@ pub fn tile2idx_idx2pnt(
     };
     Ok((tile2idx_dev, idx2pnt_dev))
 }
+ */
