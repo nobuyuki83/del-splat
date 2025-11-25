@@ -1,0 +1,34 @@
+[package]
+name = "del-splat-dlpack"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "del_msh_dlpack"
+crate-type = ["cdylib"]
+
+[features]
+cuda = [
+    "dep:del-cudarc-sys",
+    "dep:del-cudarc-kernels",
+    "del-dlpack/cuda"
+]
+
+[dependencies]
+pyo3 = { version = "0.26.0", features = ["extension-module"] }
+arrayref.workspace = true
+del-dlpack.workspace = true
+del-splat-cpu.workspace = true
+
+# local crates
+
+# for develop
+# del-cudarc-sys = {path = "../../del-cudarc/del-cudarc-sys", optional = true}
+# del-cudarc-kernels = { path = "../../del-cudarc/del-cudarc-kernels", optional = true}
+
+# for push
+del-cudarc-sys = {git = "https://github.com/nobuyuki83/del-cudarc.git", optional = true}
+del-cudarc-kernels = {git = "https://github.com/nobuyuki83/del-cudarc.git", optional = true}
+
+# not using
+#del-cudarc-safe = {git = "https://github.com/nobuyuki83/del-cudarc.git", optional = true}
