@@ -3,21 +3,8 @@
 //
 #include "tile_acceleration.h"
 
-extern "C" {
 
-struct Splat3{
-    float xyz[3];
-    unsigned char rgb[3];
-};
-
-struct Splat2 {
-    float z;
-    float pos_pix[2];
-    float rad;
-    float rgb[3];
-};
-
-__global__
+extern "C" __global__
 void splat3_to_splat2(
   uint32_t num_pnt,
   const float* pnt2xyz,
@@ -28,33 +15,33 @@ void splat3_to_splat2(
   const uint32_t img_h,
   float radius)
 {
-    int i_pnt = blockDim.x * blockIdx.x + threadIdx.x;
-    if( i_pnt >= num_pnt ){ return; }
-    //
-    const auto p0 = pnt2xyz + i_pnt * 3;
-    const auto q0 = mat4_col_major::transform_homogeneous(
+  int i_pnt = blockDim.x * blockIdx.x + threadIdx.x;
+  if( i_pnt >= num_pnt ){ return; }
+  //
+  const auto p0 = pnt2xyz + i_pnt * 3;
+  const auto q0 = mat4_col_major::transform_homogeneous(
         transform_world2ndc, p0);
-   float r0[2] = {
+  float r0[2] = {
      (q0[0] + 1.f) * 0.5f * float(img_w),
      (1.f - q0[1]) * 0.5f * float(img_h) };
-   float rad;
-   {
-       const cuda::std::array<float,9> dqdp = mat4_col_major::jacobian_transform(transform_world2ndc, p0);
-       const cuda::std::array<float,9> dpdq = mat3_col_major::try_inverse(dqdp.data()).value();
-       const float dx[3] = { dpdq[0], dpdq[1], dpdq[2] };
-       const float dy[3] = { dpdq[3], dpdq[4], dpdq[5] };
-       float rad_pix_x = (1.f / vec3::norm(dx)) * 0.5f * float(img_w) * radius;
-       float rad_pxi_y = (1.f / vec3::norm(dy)) * 0.5f * float(img_h) * radius;
-       rad = 0.5f * (rad_pix_x + rad_pxi_y);
-   }
-   pnt2pixxydepth[i_pnt*3+0] = r0[0];
-   pnt2pixxydepth[i_pnt*3+1] = r0[1];
-   pnt2pixxydepth[i_pnt*3+2] = q0[2];
-   pnt2pixrad[i_pnt] = rad;
+  float rad;
+  {
+    const cuda::std::array<float,9> dqdp = mat4_col_major::jacobian_transform(transform_world2ndc, p0);
+    const cuda::std::array<float,9> dpdq = mat3_col_major::try_inverse(dqdp.data()).value();
+    const float dx[3] = { dpdq[0], dpdq[1], dpdq[2] };
+    const float dy[3] = { dpdq[3], dpdq[4], dpdq[5] };
+    float rad_pix_x = (1.f / vec3::norm(dx)) * 0.5f * float(img_w) * radius;
+    float rad_pxi_y = (1.f / vec3::norm(dy)) * 0.5f * float(img_h) * radius;
+    rad = 0.5f * (rad_pix_x + rad_pxi_y);
+  }
+  pnt2pixxydepth[i_pnt*3+0] = r0[0];
+  pnt2pixxydepth[i_pnt*3+1] = r0[1];
+  pnt2pixxydepth[i_pnt*3+2] = q0[2];
+  pnt2pixrad[i_pnt] = rad;
 }
 
 
-__global__
+extern "C" __global__
 void count_splat_in_tile(
   uint32_t num_pnt,
   const float* pnt2pixxydepth,
@@ -78,7 +65,7 @@ void count_splat_in_tile(
         tile_w, tile_h, tile_size);
 }
 
-__global__
+extern "C" __global__
 void fill_index_info(
   uint32_t num_pnt,
   const float* pnt2pixxydepth,
@@ -103,7 +90,7 @@ void fill_index_info(
         tile_w, tile_h, tile_size);
 }
 
-__global__
+extern "C" __global__
 void rasterize_splat_using_tile(
     uint32_t img_w,
     uint32_t img_h,
@@ -143,6 +130,3 @@ void rasterize_splat_using_tile(
     }
 
 }
-
-
-} // extern "C"

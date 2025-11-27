@@ -1,12 +1,14 @@
 namespace tile_acceleration {
 
-__device__ uint32_t float_to_uint32(float value) {
+__device__
+uint32_t float_to_uint32(float value) {
     uint32_t result;
     memcpy(&result, &value, sizeof(result));
     return result;
 }
 
-__device__ uint64_t concatenate32To64(uint32_t a, uint32_t b) {
+__device__
+uint64_t concatenate32To64(uint32_t a, uint32_t b) {
     return ((uint64_t)b) | (((uint64_t)a) << 32);
 }
 

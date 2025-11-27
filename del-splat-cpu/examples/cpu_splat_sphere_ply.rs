@@ -27,48 +27,27 @@ fn main() -> anyhow::Result<()> {
         );
         del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
-    let transform_ndc2pix = del_geo_core::mat2x3_col_major::transform_ndc2pix(img_shape);
     let radius = 0.0015;
-    let (pnt2pixcodepth, pnt2pixrad) = {
+    let (pnt2pixxyndcz, pnt2pixrad) = {
         let num_pnt = pnt2xyz.len() / 3;
-        let mut pnt2pixcodepth = vec![0f32; num_pnt * 3];
+        let mut pnt2pixxyndcz = vec![0f32; num_pnt * 3];
         let mut pnt2pixrad = vec![0f32; num_pnt];
-        for i_pnt in 0..num_pnt {
-            let pos_world0 = arrayref::array_ref![pnt2xyz, i_pnt * 3, 3];
-            let ndc0 = del_geo_core::mat4_col_major::transform_homogeneous(
-                &transform_world2ndc,
-                &pos_world0,
-            )
-            .unwrap();
-            let pos_pix = del_geo_core::mat2x3_col_major::mult_vec3(
-                &transform_ndc2pix,
-                &[ndc0[0], ndc0[1], 1f32],
-            );
-            let rad_pix = {
-                let dqdp = del_geo_core::mat4_col_major::jacobian_transform(
-                    &transform_world2ndc,
-                    &pos_world0,
-                );
-                let dqdp = del_geo_core::mat3_col_major::try_inverse(&dqdp).unwrap();
-                let dx = [dqdp[0], dqdp[1], dqdp[2]];
-                let dy = [dqdp[3], dqdp[4], dqdp[5]];
-                let rad_pix_x =
-                    (1.0 / del_geo_core::vec3::norm(&dx)) * 0.5 * img_shape.0 as f32 * radius;
-                let rad_pxi_y =
-                    (1.0 / del_geo_core::vec3::norm(&dy)) * 0.5 * img_shape.1 as f32 * radius;
-                0.5 * (rad_pix_x + rad_pxi_y)
-            };
-            pnt2pixcodepth[i_pnt * 3 + 0] = pos_pix[0];
-            pnt2pixcodepth[i_pnt * 3 + 1] = pos_pix[1];
-            pnt2pixcodepth[i_pnt * 3 + 2] = ndc0[2];
-            pnt2pixrad[i_pnt] = rad_pix;
-        }
-        (pnt2pixcodepth, pnt2pixrad)
+        del_splat_cpu::splat_sphere::project(
+            &pnt2xyz,
+            radius,
+            &transform_world2ndc,
+            img_shape,
+            &mut pnt2pixxyndcz,
+            &mut pnt2pixrad,
+        );
+        (pnt2pixxyndcz, pnt2pixrad)
     };
+    dbg!(&pnt2pixxyndcz[0..100]);
+    dbg!(&pnt2pixrad[0..100]);
     {
         let mut img_data = vec![[0f32; 3]; img_shape.0 * img_shape.1];
-        del_splat_cpu::splat_point2::draw_pix_sort_z_(
-            &pnt2pixcodepth,
+        del_splat_cpu::pnt2pixxyndcz::render_pix_sort_depth(
+            &pnt2pixxyndcz,
             &pnt2rgb,
             img_shape.0,
             &mut img_data,
@@ -82,8 +61,8 @@ fn main() -> anyhow::Result<()> {
     }
     {
         let now = std::time::Instant::now();
-        del_splat_cpu::splat_circle::draw_sort_z_(
-            &pnt2pixcodepth,
+        del_splat_cpu::splat_sphere::render_circle_sort_depth(
+            &pnt2pixxyndcz,
             &pnt2pixrad,
             &pnt2rgb,
             img_shape,
@@ -102,8 +81,12 @@ fn main() -> anyhow::Result<()> {
         img_shape.0 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
         img_shape.1 / TILE_SIZE + if img_shape.0 % TILE_SIZE == 0 { 0 } else { 1 },
     );
-    let (tile2ind, ind2pnt) =
-        del_splat_cpu::tile_acceleration::hoge(&pnt2pixcodepth, &pnt2pixrad, img_shape, TILE_SIZE);
+    let (tile2ind, ind2pnt) = del_splat_cpu::tile_acceleration::tile2pnt_circle(
+        &pnt2pixxyndcz,
+        &pnt2pixrad,
+        img_shape,
+        TILE_SIZE,
+    );
     //
     println!("   Elapsed tile2pnt: {:.2?}", now.elapsed());
     let now = std::time::Instant::now();
@@ -120,11 +103,11 @@ fn main() -> anyhow::Result<()> {
         let i_pix = ih * img_shape.0 + iw;
         for &i_pnt in &ind2pnt[tile2ind[i_tile]..tile2ind[i_tile + 1]] {
             // splat back to front
-            let ndc_z = pnt2pixcodepth[i_pnt * 3 + 2];
+            let ndc_z = pnt2pixxyndcz[i_pnt * 3 + 2];
             if ndc_z <= -1f32 || ndc_z >= 1f32 {
                 continue;
             }
-            let pos_pix = arrayref::array_ref![pnt2pixcodepth, i_pnt * 3, 2];
+            let pos_pix = arrayref::array_ref![pnt2pixxyndcz, i_pnt * 3, 2];
             let rad_pix = pnt2pixrad[i_pnt];
             let pos_pixel_center = [iw as f32 + 0.5f32, ih as f32 + 0.5f32];
             if del_geo_core::edge2::length(&pos_pix, &pos_pixel_center) > rad_pix {

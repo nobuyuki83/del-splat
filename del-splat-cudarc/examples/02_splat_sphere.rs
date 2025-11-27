@@ -1,80 +1,3 @@
-use num_traits::AsPrimitive;
-
-#[cfg(feature = "cuda")]
-fn assert_tile2pnt(
-    pnt2pixxydepth: &[f32],
-    pnt2pixrad: &[f32],
-    tile_shape: (usize, usize),
-    tile_size: usize,
-    tile2idx: &[u32],
-    idx2pnt_gpu: &[u32],
-) {
-    let num_pnt = pnt2pixxydepth.len() / 3;
-    let num_ind = {
-        // debug tile2ind using cpu
-        // let pnt2splat = dev.dtoh_sync_copy(&pnt2splat_dev)?;
-        let num_tile = tile_shape.0 * tile_shape.1;
-        let mut tile2idx_cpu = vec![0usize; num_tile + 1];
-        for i_vtx in 0..num_pnt {
-            let p0 = arrayref::array_ref![pnt2pixxydepth, i_vtx * 3, 2];
-            let rad = pnt2pixrad[i_vtx];
-            let aabb2 = del_geo_core::aabb2::from_point(&p0, rad);
-            let tiles = del_geo_core::aabb2::overlapping_tiles(&aabb2, tile_size, tile_shape);
-            for &i_tile in tiles.iter() {
-                tile2idx_cpu[i_tile + 1] += 1;
-            }
-        }
-        for i_tile in 0..num_tile {
-            tile2idx_cpu[i_tile + 1] += tile2idx_cpu[i_tile];
-        }
-        // let tile2idx = dev.dtoh_sync_copy(&tile2idx_dev)?;
-        tile2idx
-            .iter()
-            .zip(tile2idx_cpu.iter())
-            .for_each(|(&a, &b)| {
-                assert_eq!(a as usize, b);
-            });
-        tile2idx[tile_shape.0 * tile_shape.1]
-    }; // end debug tile2ind
-    {
-        // assert ind2pnt by cpu code
-        //let num_ind = idx2pnt_dev.len();
-        //let pnt2splat = dev.dtoh_sync_copy(&pnt2splat_dev)?;
-        //let idx2pnt_gpu = dev.dtoh_sync_copy(&idx2pnt_dev)?;
-        let mut idx2pnt_cpu = vec![0usize; num_ind as usize];
-        let mut ind2tiledepth = Vec::<(usize, usize, f32)>::with_capacity(num_ind as usize);
-        for i_pnt in 0..num_pnt {
-            let pos_pix = arrayref::array_ref![pnt2pixxydepth, i_pnt * 3, 2];
-            let rad_pix = pnt2pixrad[i_pnt];
-            let depth = pnt2pixxydepth[i_pnt * 3 + 2] + 1f32;
-            let aabb2 = del_geo_core::aabb2::from_point(&pos_pix, rad_pix);
-            let tiles = del_geo_core::aabb2::overlapping_tiles(&aabb2, tile_size, tile_shape);
-            for &i_tile in tiles.iter() {
-                idx2pnt_cpu[ind2tiledepth.len()] = i_pnt;
-                ind2tiledepth.push((i_pnt, i_tile, depth));
-            }
-        }
-        assert_eq!(ind2tiledepth.len(), num_ind as usize);
-        ind2tiledepth.sort_by(|&a, &b| {
-            if a.1 == b.1 {
-                a.2.partial_cmp(&b.2).unwrap()
-            } else {
-                a.1.cmp(&b.1)
-            }
-        });
-        for iind in 0..ind2tiledepth.len() {
-            idx2pnt_cpu[iind] = ind2tiledepth[iind].0;
-        }
-        assert_eq!(idx2pnt_cpu.len(), idx2pnt_gpu.len());
-        idx2pnt_cpu
-            .iter()
-            .zip(idx2pnt_gpu.iter())
-            .for_each(|(&ipnt0, &ipnt1)| {
-                assert_eq!(ipnt0, ipnt1 as usize);
-            })
-    } // assert "idx2pnt" using cpu
-}
-
 #[cfg(feature = "cuda")]
 fn main() -> anyhow::Result<()> {
     use del_cudarc_sys::cu;
@@ -82,7 +5,7 @@ fn main() -> anyhow::Result<()> {
     let file_path = "asset/juice_box.ply";
     let (pnt2xyz, pnt2rgb) = del_splat_cpu::io_ply::read_xyzrgb::<_>(file_path)?;
     let aabb3 = del_msh_cpu::vtx2xyz::aabb3(&pnt2xyz, 0f32);
-    let aabb3: [f32; 6] = aabb3.map(|v| v.as_());
+    dbg!(aabb3);
     let img_shape = (2000usize + 1, 1200usize + 1);
     let transform_world2ndc = {
         let cam_proj = del_geo_core::mat4_col_major::camera_perspective_blender(
@@ -102,8 +25,10 @@ fn main() -> anyhow::Result<()> {
             0f32,
             0f32,
         );
+        dbg!(cam_modelview);
         del_geo_core::mat4_col_major::mult_mat_col_major(&cam_proj, &cam_modelview)
     };
+    dbg!(transform_world2ndc);
     let radius = 0.0015f32;
     //
     del_cudarc_sys::cache_func::clear();
@@ -118,7 +43,7 @@ fn main() -> anyhow::Result<()> {
         let pnt2pixxydepth_dev = CuVec::<f32>::with_capacity(num_pnt * 3).unwrap();
         let pnt2pixrad_dev = CuVec::<f32>::with_capacity(num_pnt).unwrap();
         let transform_world2ndc_dev = CuVec::from_slice(&transform_world2ndc).unwrap();
-        del_splat_cudarc::splat_sphere::pnt2splat3_to_pnt2splat2(
+        del_splat_cudarc::splat_circle::pnt2splat3_to_pnt2splat2(
             stream,
             &pnt2xyz_dev,
             &pnt2pixxydepth_dev,
@@ -129,12 +54,12 @@ fn main() -> anyhow::Result<()> {
         )?;
         {
             // draw pixels in cpu using the order computed in cpu
-            let pnt2pixxydepth = pnt2pixxydepth_dev.copy_to_host().unwrap();
+            let pnt2pixxyndcz = pnt2pixxydepth_dev.copy_to_host().unwrap();
             let idx2vtx = {
                 let mut idx2vtx: Vec<usize> = (0..num_pnt).collect();
                 idx2vtx.sort_by(|&idx0, &idx1| {
-                    pnt2pixxydepth[idx0 * 3 + 2]
-                        .partial_cmp(&pnt2pixxydepth[idx1 * 3 + 2])
+                    pnt2pixxyndcz[idx0 * 3 + 2]
+                        .partial_cmp(&pnt2pixxyndcz[idx1 * 3 + 2])
                         .unwrap()
                 });
                 idx2vtx
@@ -149,7 +74,7 @@ fn main() -> anyhow::Result<()> {
             );
             for i_idx in 0..num_pnt {
                 let i_vtx = idx2vtx[i_idx];
-                let pixxydepth = arrayref::array_ref![pnt2pixxydepth, i_vtx * 3, 3];
+                let pixxydepth = arrayref::array_ref![pnt2pixxyndcz, i_vtx * 3, 3];
                 let ix = pixxydepth[0] as usize;
                 let iy = pixxydepth[1] as usize;
                 let ipix = iy * img_shape.0 + ix;
@@ -172,14 +97,14 @@ fn main() -> anyhow::Result<()> {
             img_shape.1 / TILE_SIZE + if img_shape.1 % TILE_SIZE == 0 { 0 } else { 1 },
         );
         let now = std::time::Instant::now();
-        let (tile2idx_dev, idx2pnt_dev) = del_splat_cudarc::splat_sphere::tile2idx_idx2pnt(
+        let (tile2idx_dev, idx2pnt_dev) = del_splat_cudarc::splat_circle::tile2idx_idx2pnt(
             stream,
             (tile_shape.0 as u32, tile_shape.1 as u32),
             &pnt2pixxydepth_dev,
             &pnt2pixrad_dev,
         )?;
         println!("tile2idx_idx2pnt: {:.2?}", now.elapsed());
-        assert_tile2pnt(
+        del_splat_cpu::tile_acceleration::check_tile2pnt_circle(
             &pnt2pixxydepth_dev.copy_to_host().unwrap(),
             &pnt2pixrad_dev.copy_to_host().unwrap(),
             tile_shape,
@@ -189,10 +114,10 @@ fn main() -> anyhow::Result<()> {
         );
         // --------------------------------------------------------
         {
-            let mut pix2rgb_dev =
+            let pix2rgb_dev =
                 CuVec::<f32>::with_capacity(img_shape.0 * img_shape.1 * 3).unwrap();
             let now = std::time::Instant::now();
-            del_splat_cudarc::splat_sphere::splat(
+            del_splat_cudarc::splat_circle::splat(
                 stream,
                 (img_shape.0 as u32, img_shape.1 as u32),
                 &pix2rgb_dev,

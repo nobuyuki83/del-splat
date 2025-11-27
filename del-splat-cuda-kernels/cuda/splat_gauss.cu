@@ -7,24 +7,6 @@
 
 extern "C" {
 
-struct Splat3 {
-    float xyz[3];
-    float rgb_dc[3];
-    float rgb_sh[45];
-    float opacity;
-    float scale[3];
-    float quaternion[4];
-};
-
-struct Splat2 {
-    float pos_pix[2];
-    float sig_inv[3];
-    float aabb[4];
-    float rgb[3];
-    float alpha;
-    float ndc_z;
-};
-
 __global__
 void splat3_to_splat2(
   uint32_t num_pnt,
@@ -76,17 +58,16 @@ void rasterize_splat_using_tile(
     uint32_t img_w,
     uint32_t img_h,
     float* d_pix2rgb,
+    const float* pnt2pixxydepth,
+    const float* pnt2pixconvinv,
+    const float* pnt2pixaabb,
+    const float* pnt2oppacity,
+    const float* pnt2rgb,
     uint32_t tile_w,
     uint32_t tile_h,
     uint32_t tile_size,
     const uint32_t* d_tile2idx,
-    const uint32_t* d_idx2pnt,
-    const float* pnt2pixxydepth,
-    const float* pnt2pixrad,
-    const float* pnt2pixaabb,
-    const float* pnt2pixconvinv,
-    const float* pnt2oppacity,
-    const float* pnt2rgb)
+    const uint32_t* d_idx2pnt)
 {
     const uint32_t ix = blockDim.x * blockIdx.x + threadIdx.x;
     if( ix >= img_w ){ return; }
@@ -130,7 +111,7 @@ void rasterize_splat_using_tile(
 __global__
 void count_splat_in_tile(
   uint32_t num_pnt,
-  const Splat2* pnt2splat,
+  const float* pnt2pixaabb,
   uint32_t* tile2ind,
   uint32_t* pnt2ind,
   uint32_t tile_w,
@@ -140,8 +121,7 @@ void count_splat_in_tile(
     int i_pnt = blockDim.x * blockIdx.x + threadIdx.x;
     if( i_pnt >= num_pnt ){ return; }
     //
-    const Splat2& splat = pnt2splat[i_pnt];
-    const float* aabb = splat.aabb;
+    const float* aabb = pnt2pixaabb + i_pnt * 4;
     const cuda::std::array<float,4> aabb0 {aabb[0], aabb[1], aabb[2], aabb[3]};
     //
     tile_acceleration::count_splat_in_tile(
@@ -153,7 +133,8 @@ void count_splat_in_tile(
 __global__
 void fill_index_info(
   uint32_t num_pnt,
-  const Splat2* pnt2splat,
+  const float* pnt2pixxydepth,
+  const float* pnt2pixaabb,
   const uint32_t* pnt2idx,
   uint64_t* idx2tiledepth,
   uint32_t* idx2pnt,
@@ -164,11 +145,11 @@ void fill_index_info(
     int i_pnt = blockDim.x * blockIdx.x + threadIdx.x;
     if( i_pnt >= num_pnt ){ return; }
     //
-    const Splat2& splat = pnt2splat[i_pnt];
-    const float* aabb = splat.aabb;
+    const float ndcz = pnt2pixxydepth[i_pnt * 3 + 2];
+    const float* aabb = pnt2pixaabb + i_pnt * 4;
     const cuda::std::array<float,4> aabb0 {aabb[0], aabb[1], aabb[2], aabb[3]};
     tile_acceleration::fill_index_info(
-        i_pnt, aabb0, splat.ndc_z,
+        i_pnt, aabb0, ndcz,
         pnt2idx, idx2tiledepth, idx2pnt,
         tile_w, tile_h, tile_size);
 }

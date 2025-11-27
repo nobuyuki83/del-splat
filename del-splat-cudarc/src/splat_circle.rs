@@ -12,8 +12,8 @@ pub fn tile2idx_idx2pnt(
         let tile2idx = CuVec::<u32>::alloc_zeros(num_tile as usize + 1, stream).unwrap();
         let pnt2idx = CuVec::<u32>::alloc_zeros(num_pnt + 1, stream).unwrap();
         let fnc = del_cudarc_sys::cache_func::get_function_cached(
-            "del_splat::splat_sphere",
-            del_splat_cuda_kernels::get("splat_sphere").unwrap(),
+            "del_splat::splat_circle",
+            del_splat_cuda_kernels::get("splat_circle").unwrap(),
             "count_splat_in_tile",
         )
         .unwrap();
@@ -27,13 +27,12 @@ pub fn tile2idx_idx2pnt(
             builder.arg_u32(tile_shape.0);
             builder.arg_u32(tile_shape.1);
             builder.arg_u32(16u32);
-            unsafe {
-                builder.launch_kernel(
+            builder
+                .launch_kernel(
                     fnc,
                     del_cudarc_sys::LaunchConfig::for_num_elems(num_pnt as u32),
                 )
-            }
-            .unwrap();
+                .unwrap();
         }
         (tile2idx, pnt2idx)
     };
@@ -61,8 +60,8 @@ pub fn tile2idx_idx2pnt(
         let mut idx2tiledepth = CuVec::<u64>::alloc_zeros(num_ind as usize, stream).unwrap();
         let mut idx2pnt = CuVec::<u32>::alloc_zeros(num_ind as usize, stream).unwrap();
         let fnc = del_cudarc_sys::cache_func::get_function_cached(
-            "del_splat::splat_sphere",
-            del_splat_cuda_kernels::get("splat_sphere").unwrap(),
+            "del_splat::splat_circle",
+            del_splat_cuda_kernels::get("splat_circle").unwrap(),
             "fill_index_info",
         )
         .unwrap();
@@ -77,13 +76,12 @@ pub fn tile2idx_idx2pnt(
             builder.arg_u32(tile_shape.0);
             builder.arg_u32(tile_shape.1);
             builder.arg_u32(16u32);
-            unsafe {
-                builder.launch_kernel(
+            builder
+                .launch_kernel(
                     fnc,
                     del_cudarc_sys::LaunchConfig::for_num_elems(num_pnt as u32),
                 )
-            }
-            .unwrap();
+                .unwrap();
         }
         del_cudarc_sys::sort_by_key_u64::radix_sort_by_key_u64(
             stream,
@@ -105,8 +103,8 @@ pub fn pnt2splat3_to_pnt2splat2(
     radius: f32,
 ) -> anyhow::Result<()> {
     let func = del_cudarc_sys::cache_func::get_function_cached(
-        "del-splat::splat_sphere",
-        del_splat_cuda_kernels::get("splat_sphere").unwrap(),
+        "del-splat::splat_circle",
+        del_splat_cuda_kernels::get("splat_circle").unwrap(),
         "splat3_to_splat2",
     )
     .unwrap();
@@ -155,8 +153,8 @@ pub fn splat(
         shared_mem_bytes: 0,
     };
     let fnc = del_cudarc_sys::cache_func::get_function_cached(
-        "del-splat::splat_sphere",
-        del_splat_cuda_kernels::get("splat_sphere").unwrap(),
+        "del-splat::splat_circle",
+        del_splat_cuda_kernels::get("splat_circle").unwrap(),
         "rasterize_splat_using_tile",
     )
     .unwrap();

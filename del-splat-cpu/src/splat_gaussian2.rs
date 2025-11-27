@@ -1,5 +1,6 @@
+/*
 pub fn tile2point<F>(
-    point2aabbdepth: F,
+    pnt2aabbdepth: F,
     img_shape: (usize, usize),
     num_point: usize,
 ) -> (Vec<usize>, Vec<usize>, Vec<usize>)
@@ -11,7 +12,7 @@ where
     const TILE_SIZE: usize = 16;
     let tile_shape: (usize, usize) = (img_shape.0 / TILE_SIZE, img_shape.1 / TILE_SIZE);
     for i_point in 0..num_point {
-        let (aabb, depth) = point2aabbdepth(i_point);
+        let (aabb, depth) = pnt2aabbdepth(i_point);
         let ix0 = (aabb[0] / TILE_SIZE as f32).floor() as i32;
         let iy0 = (aabb[1] / TILE_SIZE as f32).floor() as i32;
         let ix1 = (aabb[2] / TILE_SIZE as f32).floor() as i32 + 1;
@@ -62,23 +63,9 @@ where
             tile2jdx[i_tile + 1] += tile2jdx[i_tile];
         }
     }
-    /*
-    for i_tile in 0..num_tile {
-        for &idx in &jdx2idx[tile2jdx[i_tile]..tile2jdx[i_tile+1]] {
-            let i_point0 = idx2point[idx];
-            println!("{} {} {} {}", i_tile, idx2tilegauss[idx].0, idx2tilegauss[idx].1, point2splat[i_point0*NDOF_SPLAT+9]);
-        }
-    }
-     */
-    /*
-    for jdx in 0..jdx2idx.len() {
-        let idx0 = jdx2idx[jdx];
-        let i_point0 = idx2point[idx0];
-        println!("{} {} {} {}", jdx, idx2tilegauss[idx0].0, idx2tilegauss[idx0].1, point2splat[i_point0*NDOF_SPLAT+9]);
-    }
-     */
     (tile2jdx, jdx2idx, idx2point)
 }
+ */
 
 /*
 
@@ -492,63 +479,3 @@ where
     Ok(())
 }
  */
-
-pub fn rasterize_naive_<Path>(
-    pnt2pixxydepth: &[f32],
-    pnt2pixconvinv: &[f32],
-    pnt2pixaabb: &[f32],
-    pnt2opacity: &[f32],
-    pnt2rgb: &[f32],
-    img_shape: (usize, usize),
-    path: Path,
-) -> anyhow::Result<()>
-where
-    Path: AsRef<std::path::Path>,
-{
-    let num_pnt = pnt2pixxydepth.len() / 3;
-    let idx2pnt = {
-        let mut idx2pnt: Vec<usize> = (0..num_pnt).collect();
-        idx2pnt.sort_by(|&i, &j| {
-            let zi = pnt2pixxydepth[i * 3 + 2] + 1f32;
-            let zj = pnt2pixxydepth[j * 3 + 2] + 1f32;
-            zi.partial_cmp(&zj).unwrap()
-        });
-        idx2pnt
-    };
-    // visualize as Gaussian without tile acceleration
-    let mut img_data = vec![0f32; img_shape.1 * img_shape.0 * 3];
-    for (ih, iw) in itertools::iproduct!(0..img_shape.1, 0..img_shape.0) {
-        let t = [iw as f32 + 0.5, ih as f32 + 0.5];
-        let mut alpha_sum = 0f32;
-        let mut alpha_occu = 1f32;
-        // draw front to back
-        for idx in (0..idx2pnt.len()).rev() {
-            let i_pnt = idx2pnt[idx];
-            if pnt2pixxydepth[i_pnt * 3 + 2] <= -1f32 || pnt2pixxydepth[i_pnt * 3 + 2] >= 1f32 {
-                continue;
-            }
-            let aabb = arrayref::array_ref![pnt2pixaabb, i_pnt * 4, 4];
-            if !del_geo_core::aabb2::is_include_point2(aabb, &[t[0], t[1]]) {
-                continue;
-            }
-            let pixxy = arrayref::array_ref![pnt2pixxydepth, i_pnt * 3, 2];
-            let pixconvinv = arrayref::array_ref![pnt2pixconvinv, i_pnt * 3, 3];
-            let rgb = arrayref::array_ref![pnt2rgb, i_pnt * 3, 3];
-            let alpha = pnt2opacity[i_pnt];
-            let t0 = [t[0] - pixxy[0], t[1] - pixxy[1]];
-            let e = del_geo_core::mat2_sym::mult_vec_from_both_sides(pixconvinv, &t0, &t0);
-            let e = (-0.5 * e).exp() * alpha;
-            let e_out = alpha_occu * e;
-            img_data[(ih * img_shape.0 + iw) * 3] += rgb[0] * e_out;
-            img_data[(ih * img_shape.0 + iw) * 3 + 1] += rgb[1] * e_out;
-            img_data[(ih * img_shape.0 + iw) * 3 + 2] += rgb[2] * e_out;
-            alpha_occu *= 1f32 - e;
-            alpha_sum += e_out;
-            if alpha_sum > 0.999 {
-                break;
-            }
-        }
-    }
-    del_canvas::write_png_from_float_image_rgb(path, &img_shape, &img_data)?;
-    Ok(())
-}
